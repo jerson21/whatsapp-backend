@@ -3030,16 +3030,34 @@ app.post('/api/chat/panel-seen', async (req, res) => {
 // Marcar mensajes como leídos (actualiza status a 'read')
 app.post('/api/chat/mark-read', async (req, res) => {
   try {
-    const { sessionId } = req.body || {};
-    if (!sessionId) return res.status(400).json({ ok: false, error: 'Falta sessionId' });
-    
+    let { sessionId, phone } = req.body || {};
+
+    // Si se proporciona phone en lugar de sessionId, buscar el sessionId
+    if (!sessionId && phone) {
+      const normalizedPhone = normalizePhoneCL(phone);
+      const [sessionRows] = await pool.query(
+        `SELECT id FROM chat_sessions WHERE phone=? AND status='OPEN' ORDER BY id DESC LIMIT 1`,
+        [normalizedPhone]
+      );
+
+      if (!sessionRows.length) {
+        return res.status(404).json({ ok: false, error: 'Conversación no encontrada' });
+      }
+
+      sessionId = sessionRows[0].id;
+    }
+
+    if (!sessionId) {
+      return res.status(400).json({ ok: false, error: 'Falta sessionId o phone' });
+    }
+
     // Marcar mensajes entrantes como leídos
     await pool.query(`
-      UPDATE chat_messages 
+      UPDATE chat_messages
       SET status = 'read', read_at = CURRENT_TIMESTAMP
       WHERE session_id = ? AND direction = 'in' AND status != 'read'
     `, [Number(sessionId)]);
-    
+
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
