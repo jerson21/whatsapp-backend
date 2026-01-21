@@ -1883,8 +1883,32 @@ app.post('/api/chat/send-media', sendLimiter, upload.single('file'), async (req,
 
 app.post('/api/chat/send', sendLimiter, async (req, res) => {
   try {
-    const { sessionId, token, text } = req.body || {};
-    if (!sessionId || !token || !text) return res.status(400).json({ ok: false, error: 'Faltan campos' });
+    let { sessionId, token, text, to, message } = req.body || {};
+
+    // Soporte para nuevo formato del frontend: { to, message }
+    if (!sessionId && to) {
+      const normalizedPhone = normalizePhoneCL(to);
+      const [sessionRows] = await pool.query(
+        `SELECT id, token FROM chat_sessions WHERE phone=? AND status='OPEN' ORDER BY id DESC LIMIT 1`,
+        [normalizedPhone]
+      );
+
+      if (!sessionRows.length) {
+        return res.status(404).json({ ok: false, error: 'Conversación no encontrada' });
+      }
+
+      sessionId = sessionRows[0].id;
+      token = sessionRows[0].token;
+    }
+
+    // Convertir "message" a "text"
+    if (!text && message) {
+      text = message;
+    }
+
+    if (!sessionId || !token || !text) {
+      return res.status(400).json({ ok: false, error: 'Faltan campos' });
+    }
 
     // Validate session
     const [rows] = await pool.query(
