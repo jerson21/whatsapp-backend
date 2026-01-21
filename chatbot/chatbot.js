@@ -221,10 +221,34 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, emitFlowEve
               });
               return;
             }
+          } else {
+            // 🆕 NO HAY FLUJO VISUAL QUE MANEJE EL MENSAJE
+            // En lugar de usar chatbot legacy, usar fallback simple
+            logger.info({ phone, text: normalized.slice(0, 50) }, '🎯 No visual flow matched - using fallback');
+
+            // Obtener mensaje de fallback de configuración
+            const [configRows] = await pool.query('SELECT fallback_message FROM chatbot_config ORDER BY id DESC LIMIT 1');
+            const fallbackMessage = configRows.length > 0 && configRows[0].fallback_message
+              ? configRows[0].fallback_message
+              : 'Gracias por tu mensaje. Un agente te atenderá pronto.';
+
+            // Enviar fallback
+            if (CHATBOT_AUTO_REPLY_DELAY > 0) await new Promise(r => setTimeout(r, CHATBOT_AUTO_REPLY_DELAY));
+            const waMsgId = await sendTextViaCloudAPI(phone, fallbackMessage);
+            const [result] = await pool.query(
+              `INSERT INTO chat_messages (session_id, direction, text, wa_jid, wa_msg_id, status, is_ai_generated) VALUES (?,?,?,?,?,?,?)`,
+              [sessionId, 'out', fallbackMessage, phone, waMsgId, 'sent', 0]
+            );
+            const messageId = result.insertId;
+            ssePush(sessionId, { type: 'message', direction: 'out', text: fallbackMessage, msgId: waMsgId, dbId: messageId, status: 'sent', isAI: false, at: Date.now() });
+
+            logger.info({ sessionId, waMsgId, messageId }, '🎯 Fallback message sent (no visual flow matched)');
+            return; // IMPORTANTE: Salir aquí, no continuar al chatbot legacy
           }
         } catch (e) {
           logger.error({ e, phone }, 'Error in visual flow engine');
-          // Continuar con el chatbot tradicional si falla el flujo visual
+          // En caso de error, también usar fallback en lugar de chatbot legacy
+          return;
         }
       }
 
