@@ -34,6 +34,8 @@ const { createChatbot } = require('./chatbot/chatbot');
 const { createFAQStore } = require('./faq/faq-store');
 const { createFAQDatabase } = require('./faq/faq-database');
 const MessageClassifier = require('./chatbot/message-classifier');
+const queueService = require('./queues/queue-service');
+const BroadcastQueue = require('./queues/broadcast-queue');
 
 /* ========= Config ========= */
 const app = express();
@@ -3252,6 +3254,125 @@ app.get('/', (req, res) => res.json({ ok: true, service: 'WhatsApp Cloud API Bac
 // Health
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
+/* ========= BROADCAST API ========= */
+let broadcastQueue = null;
+
+// Inicializar broadcast queue cuando el pool esté disponible
+const initBroadcastQueue = () => {
+  if (!broadcastQueue && pool) {
+    broadcastQueue = new BroadcastQueue(pool);
+  }
+  return broadcastQueue;
+};
+
+// Listar broadcasts
+app.get('/api/broadcasts', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT id, name, target_type, schedule_type, status,
+             total_recipients, sent_count, failed_count,
+             created_at, scheduled_at, sent_at, completed_at
+      FROM broadcasts
+      ORDER BY created_at DESC
+      LIMIT 50
+    `);
+    res.json({ ok: true, data: rows });
+  } catch (err) {
+    logger.error({ err }, 'Error listing broadcasts');
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Obtener estadísticas de un broadcast
+app.get('/api/broadcasts/:id', async (req, res) => {
+  try {
+    const bq = initBroadcastQueue();
+    const stats = await bq.getBroadcastStats(parseInt(req.params.id));
+    if (!stats) {
+      return res.status(404).json({ ok: false, error: 'Broadcast not found' });
+    }
+    res.json({ ok: true, data: stats });
+  } catch (err) {
+    logger.error({ err }, 'Error getting broadcast stats');
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Crear nuevo broadcast
+app.post('/api/broadcasts', express.json(), async (req, res) => {
+  try {
+    const { name, message, targetType, targetConfig, scheduleType, scheduledAt } = req.body;
+
+    if (!name || !message || !targetType) {
+      return res.status(400).json({ ok: false, error: 'Missing required fields: name, message, targetType' });
+    }
+
+    const bq = initBroadcastQueue();
+    const broadcastId = await bq.createBroadcast({
+      name,
+      message,
+      targetType,
+      targetConfig: targetConfig || {},
+      scheduleType: scheduleType || 'immediate',
+      scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+      createdBy: null
+    });
+
+    res.json({ ok: true, data: { id: broadcastId } });
+  } catch (err) {
+    logger.error({ err }, 'Error creating broadcast');
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Obtener estadísticas de colas
+app.get('/api/queues/stats', async (req, res) => {
+  try {
+    const stats = await queueService.getAllStats();
+    res.json({ ok: true, data: stats });
+  } catch (err) {
+    logger.error({ err }, 'Error getting queue stats');
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Listar tags disponibles
+app.get('/api/tags', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT td.*, COUNT(ct.id) as contact_count
+      FROM tag_definitions td
+      LEFT JOIN contact_tags ct ON ct.tag = td.tag
+      GROUP BY td.id
+      ORDER BY td.label
+    `);
+    res.json({ ok: true, data: rows });
+  } catch (err) {
+    logger.error({ err }, 'Error listing tags');
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Crear tag
+app.post('/api/tags', express.json(), async (req, res) => {
+  try {
+    const { tag, label, color, description } = req.body;
+    if (!tag || !label) {
+      return res.status(400).json({ ok: false, error: 'Missing required fields: tag, label' });
+    }
+
+    await pool.query(`
+      INSERT INTO tag_definitions (tag, label, color, description)
+      VALUES (?, ?, ?, ?)
+    `, [tag, label, color || '#6B7280', description || '']);
+
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ err }, 'Error creating tag');
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 /* ========= Process Signals ========= */
 process.on('SIGTERM', async () => { 
   logger.info('👋 SIGTERM'); 
@@ -4516,6 +4637,15 @@ httpServer.listen(PORT, async () => {
     await messageClassifier.loadRules().catch(e => {
       logger.warn({ e }, '⚠️ No se pudieron cargar reglas del clasificador (tabla puede no existir)');
     });
+
+    // Inicializar sistema de colas (Redis + Bull MQ)
+    const queuesInitialized = await queueService.initialize().catch(e => {
+      logger.warn({ e }, '⚠️ Sistema de colas no disponible (Redis puede no estar corriendo)');
+      return false;
+    });
+    if (queuesInitialized) {
+      logger.info('✅ Sistema de colas inicializado (Redis + Bull MQ)');
+    }
 
   } catch (e) {
     logger.error({ e }, '❌ Error en ensureSchema - El servidor puede no funcionar correctamente');

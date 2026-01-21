@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Copiar package.json primero para aprovechar cache
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm install --omit=dev
 
 # Copiar el resto del código
 COPY . .

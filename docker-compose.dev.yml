@@ -44,8 +44,12 @@ services:
       - LOG_LEVEL=debug
       - VISUAL_FLOWS_ENABLED=true
       - CHATBOT_GLOBAL_ENABLED=false
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
     depends_on:
       mysql:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     volumes:
       - ./logs:/app/logs
@@ -65,8 +69,27 @@ services:
     networks:
       - whatsapp-network
 
+  # Redis para Bull MQ (colas de mensajes, broadcasts)
+  redis:
+    image: redis:7-alpine
+    container_name: whatsapp-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - whatsapp_redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - whatsapp-network
+
 volumes:
   whatsapp_mysql_data:
+  whatsapp_redis_data:
 
 networks:
   whatsapp-network:

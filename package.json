@@ -22,11 +22,13 @@
     "pm2:logs": "pm2 logs whatsapp-chat"
   },
   "dependencies": {
+    "bullmq": "^5.1.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-rate-limit": "^7.4.0",
     "fetch-blob": "^3.2.0",
+    "ioredis": "^5.3.2",
     "multer": "1.4.5-lts.1",
     "mysql2": "^3.9.7",
     "openai": "^6.16.0",
