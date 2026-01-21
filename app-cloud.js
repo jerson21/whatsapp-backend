@@ -3133,7 +3133,7 @@ app.get('/api/chat/conversations/:phone', async (req, res) => {
 
     // Obtener todos los mensajes de la conversación
     const [messagesRows] = await pool.query(
-      `SELECT id, direction, text, created_at, status, wa_msg_id, is_ai_generated, media_type, media_url
+      `SELECT id, direction, text, created_at, status, wa_msg_id, is_ai_generated, media_type, media_id
        FROM chat_messages
        WHERE session_id = ?
        ORDER BY created_at ASC`,
@@ -3151,7 +3151,7 @@ app.get('/api/chat/conversations/:phone', async (req, res) => {
       waMsgId: msg.wa_msg_id,
       is_bot: msg.is_ai_generated === 1,
       mediaType: msg.media_type,
-      mediaUrl: msg.media_url
+      mediaId: msg.media_id
     }));
 
     res.json({
