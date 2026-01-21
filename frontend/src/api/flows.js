@@ -1,4 +1,4 @@
-const API_BASE = '/api/visual-flows'
+const API_BASE = '/api/visual-flows-live'
 
 async function handleResponse(res, errorMsg) {
   if (!res.ok) {
