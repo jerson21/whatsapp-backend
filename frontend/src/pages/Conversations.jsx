@@ -30,24 +30,84 @@ export default function Conversations() {
 
   useEffect(() => {
     loadConversations()
-    // Polling cada 5 segundos para actualizar lista de conversaciones
-    const interval = setInterval(loadConversations, 5000)
-    return () => clearInterval(interval)
+
+    // Conectar a SSE para actualizaciones de lista de conversaciones
+    const eventSource = new EventSource('/api/chat/inbox-stream')
+
+    eventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data)
+      if (data.type === 'inbox_update') {
+        // Recargar lista de conversaciones
+        loadConversations()
+      }
+    }
+
+    eventSource.onerror = (error) => {
+      console.error('Inbox SSE error:', error)
+      eventSource.close()
+      // Reconectar después de 5 segundos
+      setTimeout(() => {
+        window.location.reload()
+      }, 5000)
+    }
+
+    return () => {
+      eventSource.close()
+    }
   }, [])
 
   useEffect(() => {
-    if (selectedPhone) {
-      loadMessages(selectedPhone)
-      setSearchParams({ phone: selectedPhone })
+    if (!selectedPhone) return
 
-      // Polling cada 3 segundos para actualizar mensajes en tiempo real
-      const interval = setInterval(() => {
-        loadMessages(selectedPhone)
-      }, 3000)
+    loadMessages(selectedPhone)
+    setSearchParams({ phone: selectedPhone })
 
-      return () => clearInterval(interval)
+    // Conectar a SSE para mensajes en tiempo real
+    const conversation = conversations.find(c => c.phone === selectedPhone)
+    if (!conversation || !conversation.sessionId || !conversation.token) {
+      console.warn('No sessionId or token found for conversation')
+      return
     }
-  }, [selectedPhone])
+
+    const eventSource = new EventSource(
+      `/api/chat/stream?sessionId=${conversation.sessionId}&token=${conversation.token}`
+    )
+
+    eventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data)
+      if (data.type === 'message') {
+        // Actualizar lista de mensajes con el nuevo mensaje
+        setMessages(prev => {
+          // Evitar duplicados
+          const exists = prev.find(m => m.waMsgId === data.msgId || m.id === data.dbId)
+          if (exists) return prev
+
+          return [...prev, {
+            id: data.dbId,
+            direction: data.direction === 'in' ? 'incoming' : 'outgoing',
+            body: data.text,
+            content: data.text,
+            created_at: new Date(data.at).toISOString(),
+            status: data.status,
+            waMsgId: data.msgId,
+            is_bot: data.isAI || false
+          }]
+        })
+
+        // Actualizar lista de conversaciones
+        loadConversations()
+      }
+    }
+
+    eventSource.onerror = (error) => {
+      console.error('SSE error:', error)
+      eventSource.close()
+    }
+
+    return () => {
+      eventSource.close()
+    }
+  }, [selectedPhone, conversations])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -237,13 +297,22 @@ export default function Conversations() {
                       </div>
                     )}
                     <p className="whitespace-pre-wrap">{msg.body || msg.content}</p>
-                    <p className={`text-xs mt-1 ${
+                    <div className={`flex items-center gap-1 text-xs mt-1 ${
                       msg.direction === 'outgoing' ? 'text-green-100' : 'text-gray-400'
                     }`}>
-                      {msg.created_at
-                        ? format(new Date(msg.created_at), 'HH:mm', { locale: es })
-                        : ''}
-                    </p>
+                      <span>
+                        {msg.created_at
+                          ? format(new Date(msg.created_at), 'HH:mm', { locale: es })
+                          : ''}
+                      </span>
+                      {msg.direction === 'outgoing' && (
+                        <span className="ml-1 font-bold">
+                          {msg.status === 'sent' && '✓'}
+                          {msg.status === 'delivered' && '✓✓'}
+                          {msg.status === 'read' && '✓✓'}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}

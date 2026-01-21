@@ -2966,38 +2966,39 @@ app.get('/api/chat/check-presence', async (req, res) => {
 app.get('/api/chat/conversations', async (req, res) => {
   try {
     const [conversations] = await pool.query(`
-      SELECT 
+      SELECT
         s.id,
         s.phone,
         s.name,
+        s.token,
         s.profile_pic_url,
         s.is_business,
         s.business_name,
         s.status,
         s.created_at,
-        (SELECT text FROM chat_messages 
-         WHERE session_id = s.id 
+        (SELECT text FROM chat_messages
+         WHERE session_id = s.id
          ORDER BY id DESC LIMIT 1) as last_message,
-        (SELECT created_at FROM chat_messages 
-         WHERE session_id = s.id 
+        (SELECT created_at FROM chat_messages
+         WHERE session_id = s.id
          ORDER BY id DESC LIMIT 1) as last_message_time,
-        (SELECT direction FROM chat_messages 
-         WHERE session_id = s.id 
+        (SELECT direction FROM chat_messages
+         WHERE session_id = s.id
          ORDER BY id DESC LIMIT 1) as last_message_direction,
-        (SELECT COUNT(*) FROM chat_messages 
-         WHERE session_id = s.id 
-         AND direction = 'in' 
+        (SELECT COUNT(*) FROM chat_messages
+         WHERE session_id = s.id
+         AND direction = 'in'
          AND status != 'read') as unread_count,
-        CASE 
-          WHEN (SELECT COUNT(*) FROM chat_messages WHERE session_id = s.id AND direction = 'in') > 0 
-          THEN TIMESTAMPDIFF(HOUR, 
-               (SELECT MAX(created_at) FROM chat_messages 
-                WHERE session_id = s.id AND direction = 'in'), 
+        CASE
+          WHEN (SELECT COUNT(*) FROM chat_messages WHERE session_id = s.id AND direction = 'in') > 0
+          THEN TIMESTAMPDIFF(HOUR,
+               (SELECT MAX(created_at) FROM chat_messages
+                WHERE session_id = s.id AND direction = 'in'),
                NOW()
              )
           ELSE NULL
         END as hours_since_last_message,
-        (SELECT MAX(created_at) FROM chat_messages 
+        (SELECT MAX(created_at) FROM chat_messages
          WHERE session_id = s.id AND direction = 'in') as last_client_message_at,
         cc.category,
         cc.assigned_at as categorized_at,
@@ -3007,7 +3008,15 @@ app.get('/api/chat/conversations', async (req, res) => {
       WHERE s.status = 'OPEN'
       ORDER BY last_message_time DESC
     `);
-    res.json({ ok: true, conversations });
+
+    // Mapear el resultado para incluir sessionId junto con id
+    const conversationsWithSessionId = conversations.map(conv => ({
+      ...conv,
+      sessionId: conv.id,
+      contact_name: conv.name
+    }));
+
+    res.json({ ok: true, conversations: conversationsWithSessionId });
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
