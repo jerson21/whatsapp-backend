@@ -1377,6 +1377,15 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                 status,
                 timestamp: Date.now()
               });
+
+              // Emitir por Socket.IO
+              if (global.io) {
+                global.io.of('/chat').to(`session_${row.session_id}`).emit('message_status_update', {
+                  msgId: waMsgId,
+                  status,
+                  timestamp: Date.now()
+                });
+              }
             }
           } catch (e) {
             logger.error({ e }, 'webhook status handler');

@@ -140,12 +140,23 @@ export default function Conversations() {
       loadConversations()
     })
 
+    // Actualización de status de mensaje (delivered, read)
+    socket.on('message_status_update', (data) => {
+      console.log('Status actualizado:', data)
+      setMessages(prev => prev.map(msg =>
+        msg.waMsgId === data.msgId
+          ? { ...msg, status: data.status }
+          : msg
+      ))
+    })
+
     return () => {
       socket.off('new_message')
       socket.off('operator_typing')
       socket.off('operator_joined')
       socket.off('operator_left')
       socket.off('escalation')
+      socket.off('message_status_update')
     }
   }, [socket])
 
