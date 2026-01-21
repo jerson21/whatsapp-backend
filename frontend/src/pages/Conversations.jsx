@@ -30,7 +30,8 @@ export default function Conversations() {
 
   useEffect(() => {
     loadConversations()
-    const interval = setInterval(loadConversations, 10000)
+    // Polling cada 5 segundos para actualizar lista de conversaciones
+    const interval = setInterval(loadConversations, 5000)
     return () => clearInterval(interval)
   }, [])
 
@@ -38,6 +39,13 @@ export default function Conversations() {
     if (selectedPhone) {
       loadMessages(selectedPhone)
       setSearchParams({ phone: selectedPhone })
+
+      // Polling cada 3 segundos para actualizar mensajes en tiempo real
+      const interval = setInterval(() => {
+        loadMessages(selectedPhone)
+      }, 3000)
+
+      return () => clearInterval(interval)
     }
   }, [selectedPhone])
 
@@ -73,7 +81,9 @@ export default function Conversations() {
     try {
       await sendMessage(selectedPhone, newMessage)
       setNewMessage('')
+      // Recargar mensajes y conversaciones inmediatamente
       await loadMessages(selectedPhone)
+      await loadConversations()
     } catch (err) {
       console.error('Error sending message:', err)
       alert('Error al enviar mensaje')
