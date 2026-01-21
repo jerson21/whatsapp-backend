@@ -110,6 +110,65 @@ npm start
 
 ---
 
+## Configuracion de Puertos (Multi-Estacion)
+
+Si trabajas en múltiples estaciones de trabajo (diferentes computadoras), puedes configurar puertos diferentes sin conflictos en Git.
+
+### Configuración Inicial (Primera Vez)
+
+```bash
+# 1. Copiar el archivo de ejemplo
+cp .env.example .env
+
+# 2. Editar .env con los puertos libres en tu máquina
+# Ejemplo: Si 3001 está ocupado, usa 3002
+```
+
+### Archivo .env (Local - NO se sube a Git)
+
+```env
+# Puertos locales - ajusta según tu estación
+BACKEND_PORT=3002    # Cambiar si 3001 está ocupado
+FRONTEND_PORT=5173   # Cambiar si 5173 está ocupado
+MYSQL_PORT=3307      # Cambiar si 3307 está ocupado
+```
+
+### Levantar con Docker usando puertos personalizados
+
+```bash
+# Los puertos se leen automáticamente del archivo .env
+docker-compose -f docker-compose.dev.yml up -d --build
+```
+
+### Verificar puertos en uso (Windows)
+
+```powershell
+# Ver qué está usando el puerto 3001
+netstat -ano | findstr :3001
+
+# Liberar el puerto (si es necesario)
+# 1. Identificar el PID en el resultado anterior
+# 2. Matar el proceso:
+taskkill /PID <número> /F
+```
+
+### Verificar puertos en uso (Linux/Mac)
+
+```bash
+# Ver qué está usando el puerto 3001
+lsof -i :3001
+
+# Liberar el puerto
+kill -9 <PID>
+```
+
+**Importante:**
+- `.env` está en `.gitignore` - cada estación tiene su propia configuración
+- `.env.example` SÍ se sube a Git - es el template para nuevas estaciones
+- Los puertos por defecto son: Backend=3001, Frontend=5173, MySQL=3307
+
+---
+
 ## Configuracion (.env)
 
 ```env

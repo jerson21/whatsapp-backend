@@ -8,6 +8,7 @@ import FlowBuilder from './pages/FlowBuilder'
 import FlowLogs from './pages/FlowLogs'
 import Leads from './pages/Leads'
 import Analytics from './pages/Analytics'
+import FlowMonitor from './pages/FlowMonitor'
 
 function PrivateRoute({ children }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
@@ -36,6 +37,7 @@ export default function App() {
         <Route path="logs" element={<FlowLogs />} />
         <Route path="leads" element={<Leads />} />
         <Route path="analytics" element={<Analytics />} />
+        <Route path="monitor" element={<FlowMonitor />} />
       </Route>
 
       {/* Fallback */}

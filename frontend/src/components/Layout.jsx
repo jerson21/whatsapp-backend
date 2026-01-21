@@ -8,7 +8,8 @@ import {
   Bot,
   Activity,
   Users,
-  BarChart3
+  BarChart3,
+  Radio
 } from 'lucide-react'
 
 const navItems = [
@@ -17,7 +18,8 @@ const navItems = [
   { to: '/flows', icon: GitBranch, label: 'Flujos' },
   { to: '/logs', icon: Activity, label: 'Logs' },
   { to: '/leads', icon: Users, label: 'Leads' },
-  { to: '/analytics', icon: BarChart3, label: 'Analytics' }
+  { to: '/analytics', icon: BarChart3, label: 'Analytics' },
+  { to: '/monitor', icon: Radio, label: 'Monitor' }
 ]
 
 export default function Layout() {

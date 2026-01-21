@@ -2923,6 +2923,10 @@ app.use('/api/leads', leadsRoutes(pool));
 const flowAnalyticsRoutes = require('./api/flow-analytics-routes');
 app.use('/api/flow-analytics', flowAnalyticsRoutes(pool));
 
+/* ========= API: Flow Monitor (Tiempo Real) ========= */
+const flowMonitorRoutes = require('./api/flow-monitor-routes')(pool);
+app.use('/api/flow-monitor', flowMonitorRoutes.router);
+
 // Chequeo de presencia (no disponible en Cloud API)
 app.get('/api/chat/check-presence', async (req, res) => {
   try {
@@ -4246,7 +4250,13 @@ app.post('/api/chat/reset-escalation', express.json(), async (req, res) => {
 });
 
 /* ========= Start Server ========= */
-const { registerRoutes, handleChatbotMessage, setSessionMode, reloadVisualFlows } = createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI });
+const { registerRoutes, handleChatbotMessage, setSessionMode, reloadVisualFlows } = createChatbot({
+  pool,
+  logger,
+  ssePush,
+  sendTextViaCloudAPI,
+  emitFlowEvent: flowMonitorRoutes.emitFlowEvent
+});
 registerRoutes(app, panelAuth);
 
 // Actualizar la ruta de visual flows para incluir la función de reload

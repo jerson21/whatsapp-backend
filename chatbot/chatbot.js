@@ -5,7 +5,7 @@ const ConversationEngine = require('./conversation-engine');
 const VisualFlowEngine = require('./visual-flow-engine');
 const MessageClassifier = require('./message-classifier');
 
-function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI }) {
+function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, emitFlowEvent }) {
   // Feature flag para flujos visuales
   const VISUAL_FLOWS_ENABLED = String(process.env.VISUAL_FLOWS_ENABLED || 'true').toLowerCase() === 'true';
 
@@ -15,7 +15,7 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI }) {
 
   if (VISUAL_FLOWS_ENABLED) {
     messageClassifier = new MessageClassifier(pool);
-    visualFlowEngine = new VisualFlowEngine(pool, messageClassifier, sendTextViaCloudAPI);
+    visualFlowEngine = new VisualFlowEngine(pool, messageClassifier, sendTextViaCloudAPI, emitFlowEvent);
 
     // Cargar flujos activos al inicio
     visualFlowEngine.loadActiveFlows().catch(e => {

@@ -3,6 +3,10 @@ node_modules/
 
 # Variables de entorno (contienen secrets)
 .env
+.env.local
+
+# Permitir .env.example (template para otras estaciones)
+!.env.example
 
 # Logs
 logs/
