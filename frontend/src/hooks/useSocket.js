@@ -16,7 +16,9 @@ export function useSocket(namespace, sessionId, token) {
     if (!sessionId || !token) return;
 
     // Conectar al namespace
-    const socket = io(`/api${namespace}`, {
+    // Socket.IO usa /socket.io/ como path por defecto
+    const socket = io(namespace, {
+      path: '/socket.io/',
       auth: { sessionId, token },
       transports: ['websocket', 'polling']
     });
