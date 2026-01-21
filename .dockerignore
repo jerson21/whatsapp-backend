@@ -1,0 +1,40 @@
+# Dependencies
+node_modules
+frontend/node_modules
+
+# Build outputs
+frontend/dist
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Git
+.git
+.gitignore
+
+# Environment files (se pasan via docker-compose)
+.env.local
+.env.*.local
+
+# IDE
+.vscode
+.idea
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Documentation
+*.md
+!README.md
+
+# Tests
+__tests__
+*.test.js
+coverage
+
+# Temporary files
+*.tmp
+*.temp

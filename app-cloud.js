@@ -31,6 +31,7 @@ const upload = multer(); // memoria
 const { createChatbot } = require('./chatbot/chatbot');
 const { createFAQStore } = require('./faq/faq-store');
 const { createFAQDatabase } = require('./faq/faq-database');
+const MessageClassifier = require('./chatbot/message-classifier');
 
 /* ========= Config ========= */
 const app = express();
@@ -123,6 +124,16 @@ app.use('/chatbot', express.static(path.join(__dirname, 'public', 'chatbot')));
 app.get('/chatbot*', (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.sendFile(path.join(__dirname, 'public', 'chatbot', 'index.html'));
+});
+
+/* ========= Flow Builder React ========= */
+// Servir archivos estáticos del Flow Builder
+app.use('/flow-builder', express.static(path.join(__dirname, 'public', 'flow-builder')));
+
+// Ruta principal del Flow Builder (SPA)
+app.get('/flow-builder*', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, 'public', 'flow-builder', 'index.html'));
 });
 
 // Evitar error de favicon 404
@@ -2891,6 +2902,27 @@ app.use('/api/conversation-flows-v2', conversationFlowsV2API(pool));
 const conversationFlowsConfigV2API = require('./api/conversation-flows-config-v2');
 app.use('/api/conversation-flows-config-v2', conversationFlowsConfigV2API(pool));
 
+/* ========= API: Message Classifier ========= */
+const messageClassifier = new MessageClassifier(pool);
+const classifierRoutes = require('./api/classifier-routes');
+app.use('/api/classifier', classifierRoutes(pool, messageClassifier));
+
+/* ========= API: Visual Flows (Flow Builder) ========= */
+const visualFlowsRoutes = require('./api/flows-routes');
+app.use('/api/visual-flows', visualFlowsRoutes(pool));
+
+/* ========= API: Flow Execution Logs ========= */
+const flowLogsRoutes = require('./api/flow-logs-routes');
+app.use('/api/flow-logs', flowLogsRoutes(pool));
+
+/* ========= API: Lead Management ========= */
+const leadsRoutes = require('./api/leads-routes');
+app.use('/api/leads', leadsRoutes(pool));
+
+/* ========= API: Flow Analytics ========= */
+const flowAnalyticsRoutes = require('./api/flow-analytics-routes');
+app.use('/api/flow-analytics', flowAnalyticsRoutes(pool));
+
 // Chequeo de presencia (no disponible en Cloud API)
 app.get('/api/chat/check-presence', async (req, res) => {
   try {
@@ -4214,18 +4246,28 @@ app.post('/api/chat/reset-escalation', express.json(), async (req, res) => {
 });
 
 /* ========= Start Server ========= */
-const { registerRoutes, handleChatbotMessage, setSessionMode } = createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI });
+const { registerRoutes, handleChatbotMessage, setSessionMode, reloadVisualFlows } = createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI });
 registerRoutes(app, panelAuth);
+
+// Actualizar la ruta de visual flows para incluir la función de reload
+// Esto permite que al activar/desactivar un flujo, se recargue en memoria
+const visualFlowsRoutesWithReload = require('./api/flows-routes');
+app.use('/api/visual-flows-live', visualFlowsRoutesWithReload(pool, reloadVisualFlows));
 
 app.listen(PORT, async () => {
   logger.info(`HTTP listo en http://0.0.0.0:${PORT}`);
   try {
     await ensureSchema();
     logger.info('✅ Schema verificado/creado correctamente');
-    
+
     // Cargar configuración inicial del chatbot
     await loadInitialChatbotConfig();
-    
+
+    // Cargar reglas del clasificador
+    await messageClassifier.loadRules().catch(e => {
+      logger.warn({ e }, '⚠️ No se pudieron cargar reglas del clasificador (tabla puede no existir)');
+    });
+
   } catch (e) {
     logger.error({ e }, '❌ Error en ensureSchema - El servidor puede no funcionar correctamente');
   }

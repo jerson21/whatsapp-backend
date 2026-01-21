@@ -1,0 +1,839 @@
+import { useState, useEffect } from 'react'
+import { useFlowStore } from '../store/flowStore'
+
+const INTENT_OPTIONS = [
+  { value: 'sales', label: 'Ventas', color: '#10b981' },
+  { value: 'support', label: 'Soporte', color: '#3b82f6' },
+  { value: 'complaint', label: 'Quejas', color: '#ef4444' },
+  { value: 'info', label: 'Información', color: '#8b5cf6' },
+  { value: 'greeting', label: 'Saludo', color: '#f59e0b' }
+]
+
+const URGENCY_OPTIONS = [
+  { value: 'low', label: 'Baja' },
+  { value: 'medium', label: 'Media' },
+  { value: 'high', label: 'Alta' },
+  { value: 'critical', label: 'Crítica' }
+]
+
+export default function PropertiesPanel() {
+  const { selectedNode, updateNodeData, deleteNode, isPropertiesOpen, toggleProperties } = useFlowStore()
+  const [localData, setLocalData] = useState({})
+  const [triggerConfig, setTriggerConfig] = useState({ type: 'keyword', keywords: [], conditions: {} })
+
+  useEffect(() => {
+    if (selectedNode) {
+      setLocalData(selectedNode.data || {})
+      // Load trigger config if it's a trigger node
+      if (selectedNode.type === 'trigger' && selectedNode.data?.config) {
+        setTriggerConfig(selectedNode.data.config)
+      }
+    }
+  }, [selectedNode])
+
+  const handleChange = (field, value) => {
+    const newData = { ...localData, [field]: value }
+    setLocalData(newData)
+    updateNodeData(selectedNode.id, { [field]: value })
+  }
+
+  const handleOptionChange = (index, field, value) => {
+    const options = [...(localData.options || [])]
+    options[index] = { ...options[index], [field]: value }
+    handleChange('options', options)
+  }
+
+  const addOption = () => {
+    const options = [...(localData.options || []), { label: 'Nueva opción', value: '' }]
+    handleChange('options', options)
+  }
+
+  const removeOption = (index) => {
+    const options = localData.options.filter((_, i) => i !== index)
+    handleChange('options', options)
+  }
+
+  // Trigger config handlers
+  const handleTriggerTypeChange = (type) => {
+    const newConfig = { type, keywords: [], conditions: {} }
+    setTriggerConfig(newConfig)
+    updateNodeData(selectedNode.id, { config: newConfig })
+  }
+
+  const handleKeywordsChange = (keywordsStr) => {
+    const keywords = keywordsStr.split(',').map(k => k.trim()).filter(k => k)
+    const newConfig = { ...triggerConfig, keywords }
+    setTriggerConfig(newConfig)
+    updateNodeData(selectedNode.id, { config: newConfig })
+  }
+
+  const handleIntentToggle = (intent) => {
+    const currentIntents = triggerConfig.conditions?.intent || []
+    let newIntents
+    if (currentIntents.includes(intent)) {
+      newIntents = currentIntents.filter(i => i !== intent)
+    } else {
+      newIntents = [...currentIntents, intent]
+    }
+    const newConfig = {
+      ...triggerConfig,
+      conditions: { ...triggerConfig.conditions, intent: newIntents }
+    }
+    setTriggerConfig(newConfig)
+    updateNodeData(selectedNode.id, { config: newConfig })
+  }
+
+  const handleUrgencyChange = (urgency) => {
+    const newConfig = {
+      ...triggerConfig,
+      conditions: { ...triggerConfig.conditions, urgency }
+    }
+    setTriggerConfig(newConfig)
+    updateNodeData(selectedNode.id, { config: newConfig })
+  }
+
+  const handleMinLeadScoreChange = (score) => {
+    const newConfig = {
+      ...triggerConfig,
+      conditions: { ...triggerConfig.conditions, min_lead_score: parseInt(score) || 0 }
+    }
+    setTriggerConfig(newConfig)
+    updateNodeData(selectedNode.id, { config: newConfig })
+  }
+
+  if (!isPropertiesOpen || !selectedNode) {
+    return null
+  }
+
+  return (
+    <div style={{
+      width: '300px',
+      background: 'white',
+      borderLeft: '1px solid #e5e7eb',
+      padding: '16px',
+      height: '100%',
+      overflow: 'auto'
+    }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '16px'
+      }}>
+        <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>
+          Propiedades
+        </h3>
+        <button
+          onClick={toggleProperties}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: '18px',
+            color: '#6b7280'
+          }}
+        >
+          ✕
+        </button>
+      </div>
+
+      <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '16px' }}>
+        Tipo: <strong>{selectedNode.type}</strong>
+      </div>
+
+      {/* Label */}
+      <div style={{ marginBottom: '16px' }}>
+        <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '4px' }}>
+          Etiqueta
+        </label>
+        <input
+          type="text"
+          value={localData.label || ''}
+          onChange={(e) => handleChange('label', e.target.value)}
+          style={{
+            width: '100%',
+            padding: '8px',
+            border: '1px solid #d1d5db',
+            borderRadius: '6px',
+            fontSize: '13px'
+          }}
+        />
+      </div>
+
+      {/* Trigger Configuration */}
+      {selectedNode.type === 'trigger' && (
+        <div style={{
+          marginBottom: '16px',
+          padding: '12px',
+          background: '#f8fafc',
+          borderRadius: '8px',
+          border: '1px solid #e2e8f0'
+        }}>
+          <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '12px', color: '#475569' }}>
+            Configuración del Trigger
+          </label>
+
+          {/* Trigger Type */}
+          <div style={{ marginBottom: '12px' }}>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '6px', color: '#64748b' }}>
+              Tipo de activación
+            </label>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {[
+                { value: 'keyword', label: 'Palabras clave' },
+                { value: 'classification', label: 'Clasificación' },
+                { value: 'always', label: 'Siempre' }
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => handleTriggerTypeChange(opt.value)}
+                  style={{
+                    flex: 1,
+                    padding: '8px 4px',
+                    fontSize: '11px',
+                    border: triggerConfig.type === opt.value ? '2px solid #25D366' : '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    background: triggerConfig.type === opt.value ? '#dcfce7' : 'white',
+                    color: triggerConfig.type === opt.value ? '#166534' : '#6b7280',
+                    cursor: 'pointer',
+                    fontWeight: triggerConfig.type === opt.value ? 600 : 400
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Keywords input */}
+          {triggerConfig.type === 'keyword' && (
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#64748b' }}>
+                Palabras clave (separadas por coma)
+              </label>
+              <input
+                type="text"
+                value={(triggerConfig.keywords || []).join(', ')}
+                onChange={(e) => handleKeywordsChange(e.target.value)}
+                placeholder="precio, costo, cotizar, cuanto"
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  fontSize: '12px'
+                }}
+              />
+              <p style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>
+                El flujo se activa si el mensaje contiene alguna de estas palabras
+              </p>
+            </div>
+          )}
+
+          {/* Classification options */}
+          {triggerConfig.type === 'classification' && (
+            <>
+              {/* Intents */}
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '6px', color: '#64748b' }}>
+                  Intenciones del mensaje
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {INTENT_OPTIONS.map(intent => {
+                    const isSelected = (triggerConfig.conditions?.intent || []).includes(intent.value)
+                    return (
+                      <button
+                        key={intent.value}
+                        onClick={() => handleIntentToggle(intent.value)}
+                        style={{
+                          padding: '6px 10px',
+                          fontSize: '11px',
+                          border: isSelected ? `2px solid ${intent.color}` : '1px solid #d1d5db',
+                          borderRadius: '16px',
+                          background: isSelected ? `${intent.color}20` : 'white',
+                          color: isSelected ? intent.color : '#6b7280',
+                          cursor: 'pointer',
+                          fontWeight: isSelected ? 600 : 400
+                        }}
+                      >
+                        {isSelected && '✓ '}{intent.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Urgency */}
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#64748b' }}>
+                  Urgencia mínima
+                </label>
+                <select
+                  value={triggerConfig.conditions?.urgency || ''}
+                  onChange={(e) => handleUrgencyChange(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '12px'
+                  }}
+                >
+                  <option value="">Cualquiera</option>
+                  {URGENCY_OPTIONS.map(u => (
+                    <option key={u.value} value={u.value}>{u.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Lead Score */}
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#64748b' }}>
+                  Lead score mínimo
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={triggerConfig.conditions?.min_lead_score || 0}
+                  onChange={(e) => handleMinLeadScoreChange(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '12px'
+                  }}
+                />
+                <p style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>
+                  Solo activa si el lead tiene este puntaje o más (0-100)
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* Always trigger info */}
+          {triggerConfig.type === 'always' && (
+            <div style={{
+              padding: '12px',
+              background: '#fef3c7',
+              borderRadius: '6px',
+              border: '1px solid #fcd34d'
+            }}>
+              <p style={{ fontSize: '11px', color: '#92400e', margin: 0 }}>
+                ⚠️ Este flujo se activará para TODOS los mensajes entrantes que no coincidan con otros flujos.
+                Úsalo como flujo por defecto.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Content (for message, question, transfer) */}
+      {['message', 'question', 'transfer'].includes(selectedNode.type) && (
+        <div style={{ marginBottom: '16px' }}>
+          <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '4px' }}>
+            Contenido del mensaje
+          </label>
+          <textarea
+            value={localData.content || ''}
+            onChange={(e) => handleChange('content', e.target.value)}
+            rows={4}
+            style={{
+              width: '100%',
+              padding: '8px',
+              border: '1px solid #d1d5db',
+              borderRadius: '6px',
+              fontSize: '13px',
+              resize: 'vertical'
+            }}
+            placeholder="Escribe el mensaje..."
+          />
+          <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
+            Usa {'{{variable}}'} para insertar variables
+          </p>
+        </div>
+      )}
+
+      {/* Variable (for question) */}
+      {selectedNode.type === 'question' && (
+        <div style={{ marginBottom: '16px' }}>
+          <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '4px' }}>
+            Guardar respuesta en variable
+          </label>
+          <input
+            type="text"
+            value={localData.variable || ''}
+            onChange={(e) => handleChange('variable', e.target.value)}
+            style={{
+              width: '100%',
+              padding: '8px',
+              border: '1px solid #d1d5db',
+              borderRadius: '6px',
+              fontSize: '13px'
+            }}
+            placeholder="nombre_variable"
+          />
+        </div>
+      )}
+
+      {/* Options (for question) */}
+      {selectedNode.type === 'question' && (
+        <div style={{ marginBottom: '16px' }}>
+          <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '8px' }}>
+            Opciones de respuesta
+          </label>
+          {(localData.options || []).map((opt, idx) => (
+            <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+              <input
+                type="text"
+                value={opt.label}
+                onChange={(e) => handleOptionChange(idx, 'label', e.target.value)}
+                placeholder="Texto"
+                style={{
+                  flex: 1,
+                  padding: '6px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '4px',
+                  fontSize: '12px'
+                }}
+              />
+              <input
+                type="text"
+                value={opt.value}
+                onChange={(e) => handleOptionChange(idx, 'value', e.target.value)}
+                placeholder="Valor"
+                style={{
+                  width: '80px',
+                  padding: '6px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '4px',
+                  fontSize: '12px'
+                }}
+              />
+              <button
+                onClick={() => removeOption(idx)}
+                style={{
+                  background: '#fee2e2',
+                  border: 'none',
+                  borderRadius: '4px',
+                  padding: '0 8px',
+                  cursor: 'pointer',
+                  color: '#ef4444'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          <button
+            onClick={addOption}
+            style={{
+              background: '#f3f4f6',
+              border: '1px dashed #d1d5db',
+              borderRadius: '6px',
+              padding: '8px',
+              width: '100%',
+              cursor: 'pointer',
+              fontSize: '12px'
+            }}
+          >
+            + Agregar opción
+          </button>
+        </div>
+      )}
+
+      {/* Action type (for action node) */}
+      {selectedNode.type === 'action' && (
+        <div style={{ marginBottom: '16px' }}>
+          <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '4px' }}>
+            Tipo de acción
+          </label>
+          <select
+            value={localData.action || ''}
+            onChange={(e) => handleChange('action', e.target.value)}
+            style={{
+              width: '100%',
+              padding: '8px',
+              border: '1px solid #d1d5db',
+              borderRadius: '6px',
+              fontSize: '13px'
+            }}
+          >
+            <option value="">Selecciona...</option>
+            <option value="notify_sales">Notificar a ventas</option>
+            <option value="create_ticket">Crear ticket</option>
+            <option value="save_lead">Guardar lead</option>
+            <option value="send_email">Enviar email</option>
+            <option value="webhook">Llamar webhook</option>
+            <option value="search_faq">Buscar en FAQ</option>
+          </select>
+        </div>
+      )}
+
+      {/* AI Response node configuration */}
+      {selectedNode.type === 'ai_response' && (
+        <div style={{
+          marginBottom: '16px',
+          padding: '12px',
+          background: '#f5f3ff',
+          borderRadius: '8px',
+          border: '1px solid #c4b5fd'
+        }}>
+          <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '12px', color: '#5b21b6' }}>
+            🧠 Configuración de IA
+          </label>
+
+          {/* System prompt */}
+          <div style={{ marginBottom: '12px' }}>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
+              Prompt del sistema
+            </label>
+            <textarea
+              value={localData.system_prompt || ''}
+              onChange={(e) => handleChange('system_prompt', e.target.value)}
+              rows={3}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '12px',
+                resize: 'vertical'
+              }}
+              placeholder="Eres un asistente de ventas amable y profesional..."
+            />
+          </div>
+
+          {/* User prompt */}
+          <div style={{ marginBottom: '12px' }}>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
+              Prompt del usuario
+            </label>
+            <textarea
+              value={localData.user_prompt || ''}
+              onChange={(e) => handleChange('user_prompt', e.target.value)}
+              rows={2}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '12px',
+                resize: 'vertical'
+              }}
+              placeholder="El cliente pregunta: {{initial_message}}"
+            />
+            <p style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>
+              Usa {'{{variable}}'} para insertar datos dinámicos
+            </p>
+          </div>
+
+          {/* Model selection */}
+          <div style={{ marginBottom: '12px' }}>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
+              Modelo
+            </label>
+            <select
+              value={localData.model || 'gpt-4o-mini'}
+              onChange={(e) => handleChange('model', e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '12px'
+              }}
+            >
+              <option value="gpt-4o-mini">GPT-4o Mini (rápido)</option>
+              <option value="gpt-4o">GPT-4o (preciso)</option>
+              <option value="gpt-4-turbo">GPT-4 Turbo</option>
+            </select>
+          </div>
+
+          {/* Temperature and max tokens */}
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
+                Temperatura
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="1"
+                step="0.1"
+                value={localData.temperature || 0.7}
+                onChange={(e) => handleChange('temperature', parseFloat(e.target.value))}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  fontSize: '12px'
+                }}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
+                Max tokens
+              </label>
+              <input
+                type="number"
+                min="50"
+                max="2000"
+                step="50"
+                value={localData.max_tokens || 200}
+                onChange={(e) => handleChange('max_tokens', parseInt(e.target.value))}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  fontSize: '12px'
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Variable to save response */}
+          <div>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
+              Guardar respuesta en variable (opcional)
+            </label>
+            <input
+              type="text"
+              value={localData.variable || ''}
+              onChange={(e) => handleChange('variable', e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '12px'
+              }}
+              placeholder="ai_response"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Webhook node configuration */}
+      {selectedNode.type === 'webhook' && (
+        <div style={{
+          marginBottom: '16px',
+          padding: '12px',
+          background: '#fff7ed',
+          borderRadius: '8px',
+          border: '1px solid #fed7aa'
+        }}>
+          <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '12px', color: '#c2410c' }}>
+            🌐 Configuración de Webhook
+          </label>
+
+          {/* URL */}
+          <div style={{ marginBottom: '12px' }}>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
+              URL del endpoint
+            </label>
+            <input
+              type="text"
+              value={localData.url || ''}
+              onChange={(e) => handleChange('url', e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '12px'
+              }}
+              placeholder="https://api.ejemplo.com/endpoint"
+            />
+          </div>
+
+          {/* Method */}
+          <div style={{ marginBottom: '12px' }}>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
+              Método HTTP
+            </label>
+            <select
+              value={localData.method || 'POST'}
+              onChange={(e) => handleChange('method', e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '12px'
+              }}
+            >
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+              <option value="PATCH">PATCH</option>
+              <option value="DELETE">DELETE</option>
+            </select>
+          </div>
+
+          {/* Headers */}
+          <div style={{ marginBottom: '12px' }}>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
+              Headers (JSON)
+            </label>
+            <textarea
+              value={localData.headers || '{\n  "Content-Type": "application/json"\n}'}
+              onChange={(e) => handleChange('headers', e.target.value)}
+              rows={3}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '11px',
+                fontFamily: 'monospace',
+                resize: 'vertical'
+              }}
+            />
+          </div>
+
+          {/* Body */}
+          <div style={{ marginBottom: '12px' }}>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
+              Body (JSON) - Usa {'{{variable}}'} para datos dinámicos
+            </label>
+            <textarea
+              value={localData.body || '{\n  "phone": "{{phone}}",\n  "message": "{{initial_message}}"\n}'}
+              onChange={(e) => handleChange('body', e.target.value)}
+              rows={4}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '11px',
+                fontFamily: 'monospace',
+                resize: 'vertical'
+              }}
+            />
+          </div>
+
+          {/* Timeout */}
+          <div style={{ marginBottom: '12px' }}>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
+              Timeout (ms)
+            </label>
+            <input
+              type="number"
+              min="1000"
+              max="30000"
+              step="1000"
+              value={localData.timeout || 5000}
+              onChange={(e) => handleChange('timeout', parseInt(e.target.value))}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '12px'
+              }}
+            />
+          </div>
+
+          {/* Variable to save response */}
+          <div>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
+              Guardar respuesta en variable
+            </label>
+            <input
+              type="text"
+              value={localData.variable || ''}
+              onChange={(e) => handleChange('variable', e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '12px'
+              }}
+              placeholder="api_response"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Delay node configuration */}
+      {selectedNode.type === 'delay' && (
+        <div style={{
+          marginBottom: '16px',
+          padding: '12px',
+          background: '#f8fafc',
+          borderRadius: '8px',
+          border: '1px solid #cbd5e1'
+        }}>
+          <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '12px', color: '#475569' }}>
+            ⏱️ Configuración de Espera
+          </label>
+
+          {/* Seconds */}
+          <div style={{ marginBottom: '12px' }}>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
+              Segundos de espera
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="60"
+              step="1"
+              value={localData.seconds || 2}
+              onChange={(e) => handleChange('seconds', parseInt(e.target.value))}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '13px'
+              }}
+            />
+            <p style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>
+              Entre 1 y 60 segundos. Recomendado: 2-5 seg para parecer más humano.
+            </p>
+          </div>
+
+          {/* Typing indicator */}
+          <div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={localData.typing_indicator !== false}
+                onChange={(e) => handleChange('typing_indicator', e.target.checked)}
+                style={{ width: '16px', height: '16px' }}
+              />
+              <span style={{ fontSize: '12px', color: '#374151' }}>
+                Mostrar "escribiendo..." mientras espera
+              </span>
+            </label>
+          </div>
+        </div>
+      )}
+
+      {/* Delete button */}
+      <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #e5e7eb' }}>
+        <button
+          onClick={() => deleteNode(selectedNode.id)}
+          style={{
+            width: '100%',
+            padding: '10px',
+            background: '#fee2e2',
+            border: '1px solid #fecaca',
+            borderRadius: '6px',
+            color: '#dc2626',
+            cursor: 'pointer',
+            fontWeight: 500,
+            fontSize: '13px'
+          }}
+        >
+          🗑️ Eliminar nodo
+        </button>
+      </div>
+    </div>
+  )
+}

@@ -2,8 +2,26 @@
 
 const { fetch } = require('undici');
 const ConversationEngine = require('./conversation-engine');
+const VisualFlowEngine = require('./visual-flow-engine');
+const MessageClassifier = require('./message-classifier');
 
 function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI }) {
+  // Feature flag para flujos visuales
+  const VISUAL_FLOWS_ENABLED = String(process.env.VISUAL_FLOWS_ENABLED || 'true').toLowerCase() === 'true';
+
+  // Initialize Visual Flow Engine
+  let visualFlowEngine = null;
+  let messageClassifier = null;
+
+  if (VISUAL_FLOWS_ENABLED) {
+    messageClassifier = new MessageClassifier(pool);
+    visualFlowEngine = new VisualFlowEngine(pool, messageClassifier, sendTextViaCloudAPI);
+
+    // Cargar flujos activos al inicio
+    visualFlowEngine.loadActiveFlows().catch(e => {
+      logger.warn({ e }, 'Error loading visual flows at startup');
+    });
+  }
   const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
   const CHATBOT_MODE_DEFAULT = process.env.CHATBOT_MODE_DEFAULT || 'automatic';
   const CHATBOT_AI_MODEL = process.env.CHATBOT_AI_MODEL || 'gpt-4o-mini';
@@ -159,6 +177,56 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI }) {
       let reply = null;
       let isAISuggestion = false;
       let requiresHuman = false;
+
+      // 🆕 INTENTAR FLUJO VISUAL PRIMERO (si está habilitado)
+      if (VISUAL_FLOWS_ENABLED && visualFlowEngine && mode !== 'manual') {
+        try {
+          const flowResult = await visualFlowEngine.processMessage(phone, normalized, {
+            sessionId,
+            phone
+          });
+
+          if (flowResult) {
+            logger.info({ phone, flowResult: flowResult.type }, '🎯 Visual flow handled message');
+
+            // Si el flujo manejó el mensaje, salir
+            if (flowResult.type === 'waiting_for_response') {
+              // El flujo envió mensaje y espera respuesta
+              ssePush(sessionId, {
+                type: 'visual_flow_active',
+                flowState: 'waiting',
+                message: 'Flujo visual activo - esperando respuesta del cliente'
+              });
+              return;
+            }
+
+            if (flowResult.type === 'transfer_to_human') {
+              // Transferir a humano
+              ssePush(sessionId, {
+                type: 'visual_flow_transfer',
+                variables: flowResult.variables,
+                message: 'Cliente transferido por flujo visual'
+              });
+              // Cambiar modo a manual para que humano tome el control
+              sessionModes.set(sessionIdNum, 'manual');
+              await pool.query(`UPDATE chat_sessions SET chatbot_mode='manual' WHERE id=?`, [sessionId]);
+              return;
+            }
+
+            if (flowResult.type === 'flow_completed' || flowResult.type === 'message_sent') {
+              // Flujo completado
+              ssePush(sessionId, {
+                type: 'visual_flow_completed',
+                message: 'Flujo visual completado'
+              });
+              return;
+            }
+          }
+        } catch (e) {
+          logger.error({ e, phone }, 'Error in visual flow engine');
+          // Continuar con el chatbot tradicional si falla el flujo visual
+        }
+      }
 
       if (mode === 'manual') {
         logger.info({ sessionId, mode }, '🤖 Modo MANUAL - No respondiendo automáticamente');
@@ -613,7 +681,22 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI }) {
     logger.info({ sessionId, mode }, '🤖 Modo de sesión actualizado externamente');
   }
 
-  return { registerRoutes, handleChatbotMessage, setSessionMode };
+  // Función para recargar flujos visuales
+  async function reloadVisualFlows() {
+    if (visualFlowEngine) {
+      await visualFlowEngine.loadActiveFlows();
+      logger.info('🔄 Visual flows reloaded');
+      return true;
+    }
+    return false;
+  }
+
+  // Obtener motor de flujos para uso externo
+  function getVisualFlowEngine() {
+    return visualFlowEngine;
+  }
+
+  return { registerRoutes, handleChatbotMessage, setSessionMode, reloadVisualFlows, getVisualFlowEngine };
 }
 
 module.exports = { createChatbot };

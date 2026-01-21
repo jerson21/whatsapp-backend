@@ -1,30 +1,36 @@
 {
-  "name": "whatsapp-chat-respaldos",
+  "name": "whatsapp-backend",
   "version": "1.0.0",
-  "description": "Chat WhatsApp para soporte - Respaldos Chile",
-  "main": "app.js",
+  "description": "Backend WhatsApp Chat - Respaldos Chile",
+  "main": "app-cloud.js",
   "scripts": {
     "start": "node --dns-result-order=ipv4first --max-old-space-size=512 app-cloud.js",
     "dev": "node --dns-result-order=ipv4first app-cloud.js",
-    "build": "cd chatbot-react && npm install && npm run build",
-    "postbuild": "mkdir -p public/chatbot && cp -r chatbot-react/dist/* public/chatbot/",
-    "deploy": "./redeploy-pm2.sh",
+    "docker:up": "docker-compose -f docker-compose.dev.yml up -d --build",
+    "docker:down": "docker-compose -f docker-compose.dev.yml down",
+    "docker:logs": "docker-compose -f docker-compose.dev.yml logs -f",
+    "docker:rebuild": "docker-compose -f docker-compose.dev.yml up -d --build --force-recreate",
+    "docker:ps": "docker-compose -f docker-compose.dev.yml ps",
+    "db:start": "docker-compose -f docker-compose.dev.yml up -d mysql",
+    "db:stop": "docker-compose -f docker-compose.dev.yml stop mysql",
+    "db:logs": "docker-compose -f docker-compose.dev.yml logs -f mysql",
+    "setup": "node migrate-chatbot-tables.js && node migrate-faq-data.js && node migrate-categories.js && node migrate-classifier.js",
+    "migrate:classifier": "node migrate-classifier.js",
     "pm2:start": "pm2 start ecosystem.config.js",
     "pm2:restart": "pm2 restart whatsapp-chat",
     "pm2:stop": "pm2 stop whatsapp-chat",
     "pm2:logs": "pm2 logs whatsapp-chat"
   },
   "dependencies": {
-    "undici": "^6.19.8",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-rate-limit": "^7.4.0",
-    "mysql2": "^3.9.7",
-    "pino": "^8.19.0",
+    "fetch-blob": "^3.2.0",
     "multer": "1.4.5-lts.1",
-    "fetch-blob": "^3.2.0"
-
-
+    "mysql2": "^3.9.7",
+    "openai": "^6.16.0",
+    "pino": "^8.19.0",
+    "undici": "^6.19.8"
   }
 }

@@ -1,0 +1,73 @@
+# Docker Compose para desarrollo local
+# Levanta MySQL + Backend + Frontend
+# Uso: docker-compose -f docker-compose.dev.yml up -d --build
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: whatsapp-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: whatsapp_chat
+      MYSQL_USER: dev
+      MYSQL_PASSWORD: dev123
+    ports:
+      - "3307:3306"
+    volumes:
+      - whatsapp_mysql_data:/var/lib/mysql
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot123"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - whatsapp-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: whatsapp-backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=dev
+      - DB_PASS=dev123
+      - DB_NAME=whatsapp_chat
+      - LOG_LEVEL=debug
+      - VISUAL_FLOWS_ENABLED=true
+      - CHATBOT_GLOBAL_ENABLED=false
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - whatsapp-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: whatsapp-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    networks:
+      - whatsapp-network
+
+volumes:
+  whatsapp_mysql_data:
+
+networks:
+  whatsapp-network:
+    driver: bridge

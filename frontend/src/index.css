@@ -1,0 +1,140 @@
+@import "tailwindcss";
+
+:root {
+  --whatsapp-green: #25D366;
+  --whatsapp-dark: #075E54;
+  --whatsapp-light: #DCF8C6;
+  --whatsapp-blue: #34B7F1;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f0f2f5;
+}
+
+/* React Flow customization */
+.react-flow__node {
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.react-flow__handle {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.react-flow__edge-path {
+  stroke-width: 2;
+}
+
+/* Node types */
+.node-trigger {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.node-message {
+  background: white;
+  border: 2px solid var(--whatsapp-green);
+}
+
+.node-question {
+  background: white;
+  border: 2px solid var(--whatsapp-blue);
+}
+
+.node-condition {
+  background: #fef3c7;
+  border: 2px solid #f59e0b;
+}
+
+.node-action {
+  background: #e0e7ff;
+  border: 2px solid #6366f1;
+}
+
+.node-transfer {
+  background: #fce7f3;
+  border: 2px solid #ec4899;
+}
+
+.node-end {
+  background: #fee2e2;
+  border: 2px solid #ef4444;
+}
+
+/* Sidebar */
+.sidebar {
+  background: white;
+  border-right: 1px solid #e5e7eb;
+}
+
+.node-palette-item {
+  padding: 10px 15px;
+  margin: 5px;
+  border-radius: 8px;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: all 0.2s;
+}
+
+.node-palette-item:hover {
+  transform: translateX(5px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.node-palette-item:active {
+  cursor: grabbing;
+}
+
+/* Animations */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes typing {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-5px);
+    opacity: 1;
+  }
+}
+
+/* New node types */
+.node-ai_response {
+  background: #f3e8ff;
+  border: 2px solid #8b5cf6;
+}
+
+.node-webhook {
+  background: #ffedd5;
+  border: 2px solid #f97316;
+}
+
+.node-delay {
+  background: #f1f5f9;
+  border: 2px solid #64748b;
+}

@@ -24,3 +24,6 @@ Thumbs.db
 # Backups
 *.backup
 *.bak
+
+# Windows reserved device names accidentally committed
+nul
