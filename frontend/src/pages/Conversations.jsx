@@ -389,7 +389,7 @@ export default function Conversations() {
                     )}
                     <p className="whitespace-pre-wrap">{msg.body || msg.content}</p>
                     <div className={`flex items-center gap-1 text-xs mt-1 ${
-                      msg.direction === 'outgoing' ? 'text-green-100' : 'text-gray-400'
+                      msg.direction === 'outgoing' ? 'text-white opacity-90' : 'text-gray-400'
                     }`}>
                       <span>
                         {msg.created_at
@@ -397,10 +397,10 @@ export default function Conversations() {
                           : ''}
                       </span>
                       {msg.direction === 'outgoing' && (
-                        <span className="ml-1 font-bold">
+                        <span className="ml-1">
                           {msg.status === 'sent' && '✓'}
                           {msg.status === 'delivered' && '✓✓'}
-                          {msg.status === 'read' && '✓✓'}
+                          {msg.status === 'read' && <span className="text-blue-200">✓✓</span>}
                         </span>
                       )}
                     </div>
