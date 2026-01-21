@@ -3131,11 +3131,35 @@ app.get('/api/chat/conversations/:phone', async (req, res) => {
       lastMessageTime = lastMessageRows[0].created_at.toISOString(); // Convertir a formato ISO string
     }
 
+    // Obtener todos los mensajes de la conversación
+    const [messagesRows] = await pool.query(
+      `SELECT id, direction, text, created_at, status, wa_msg_id, is_ai_generated, media_type, media_url
+       FROM chat_messages
+       WHERE session_id = ?
+       ORDER BY created_at ASC`,
+      [sessionId]
+    );
+
+    // Formatear mensajes para el frontend
+    const messages = messagesRows.map(msg => ({
+      id: msg.id,
+      direction: msg.direction === 'in' ? 'incoming' : 'outgoing',
+      body: msg.text,
+      content: msg.text,
+      created_at: msg.created_at.toISOString(),
+      status: msg.status,
+      waMsgId: msg.wa_msg_id,
+      is_bot: msg.is_ai_generated === 1,
+      mediaType: msg.media_type,
+      mediaUrl: msg.media_url
+    }));
+
     res.json({
       ok: true,
       unreadCount,
       lastMessage,
-      lastMessageTime
+      lastMessageTime,
+      messages
     });
 
   } catch (e) {
