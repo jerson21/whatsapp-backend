@@ -16,6 +16,7 @@ import {
   Phone,
   MessageSquare
 } from 'lucide-react'
+import { useSocket } from '../hooks/useSocket'
 
 export default function Conversations() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -26,7 +27,19 @@ export default function Conversations() {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [search, setSearch] = useState('')
+  const [typingOperators, setTypingOperators] = useState(new Set())
   const messagesEndRef = useRef(null)
+  const typingTimeoutRef = useRef(null)
+
+  // Obtener conversación seleccionada
+  const selectedConversation = conversations.find(c => c.phone === selectedPhone)
+
+  // Conectar socket solo cuando hay conversación seleccionada
+  const { socket, connected } = useSocket(
+    '/chat',
+    selectedConversation?.sessionId,
+    selectedConversation?.token
+  )
 
   useEffect(() => {
     loadConversations()
@@ -61,53 +74,80 @@ export default function Conversations() {
 
     loadMessages(selectedPhone)
     setSearchParams({ phone: selectedPhone })
+  }, [selectedPhone])
 
-    // Conectar a SSE para mensajes en tiempo real
-    const conversation = conversations.find(c => c.phone === selectedPhone)
-    if (!conversation || !conversation.sessionId || !conversation.token) {
-      console.warn('No sessionId or token found for conversation')
-      return
-    }
+  // Escuchar eventos de Socket.IO
+  useEffect(() => {
+    if (!socket) return
 
-    const eventSource = new EventSource(
-      `/api/chat/stream?sessionId=${conversation.sessionId}&token=${conversation.token}`
-    )
+    // Nuevo mensaje (de cualquier operador o cliente)
+    socket.on('new_message', (data) => {
+      console.log('Nuevo mensaje via WebSocket:', data)
 
-    eventSource.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-      if (data.type === 'message') {
-        // Actualizar lista de mensajes con el nuevo mensaje
-        setMessages(prev => {
-          // Evitar duplicados
-          const exists = prev.find(m => m.waMsgId === data.msgId || m.id === data.dbId)
-          if (exists) return prev
+      // Agregar mensaje a la lista (prevenir duplicados por ID)
+      setMessages(prev => {
+        const exists = prev.find(m => m.waMsgId === data.msgId || m.id === data.dbId)
+        if (exists) return prev
 
-          return [...prev, {
-            id: data.dbId,
-            direction: data.direction === 'in' ? 'incoming' : 'outgoing',
-            body: data.text,
-            content: data.text,
-            created_at: new Date(data.at).toISOString(),
-            status: data.status,
-            waMsgId: data.msgId,
-            is_bot: data.isAI || false
-          }]
+        return [...prev, {
+          id: data.dbId || Date.now(),
+          direction: data.direction === 'in' ? 'incoming' : 'outgoing',
+          body: data.text,
+          content: data.text,
+          created_at: new Date(data.timestamp).toISOString(),
+          status: data.status,
+          waMsgId: data.msgId,
+          is_bot: data.isAI || false
+        }]
+      })
+
+      // Recargar lista de conversaciones para actualizar "último mensaje"
+      loadConversations()
+    })
+
+    // Operador escribiendo
+    socket.on('operator_typing', (data) => {
+      if (data.typing) {
+        setTypingOperators(prev => new Set(prev).add(data.socketId))
+      } else {
+        setTypingOperators(prev => {
+          const newSet = new Set(prev)
+          newSet.delete(data.socketId)
+          return newSet
         })
-
-        // Actualizar lista de conversaciones
-        loadConversations()
       }
-    }
+    })
 
-    eventSource.onerror = (error) => {
-      console.error('SSE error:', error)
-      eventSource.close()
-    }
+    // Operador se unió
+    socket.on('operator_joined', (data) => {
+      console.log('Operador se unió:', data.socketId)
+    })
+
+    // Operador salió
+    socket.on('operator_left', (data) => {
+      console.log('Operador salió:', data.socketId)
+      setTypingOperators(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(data.socketId)
+        return newSet
+      })
+    })
+
+    // Escalamiento
+    socket.on('escalation', (data) => {
+      console.log('Escalamiento detectado:', data)
+      // Recargar conversaciones para ver el cambio de estado
+      loadConversations()
+    })
 
     return () => {
-      eventSource.close()
+      socket.off('new_message')
+      socket.off('operator_typing')
+      socket.off('operator_joined')
+      socket.off('operator_left')
+      socket.off('escalation')
     }
-  }, [selectedPhone, conversations])
+  }, [socket])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -134,16 +174,38 @@ export default function Conversations() {
     }
   }
 
+  const handleInputChange = (e) => {
+    setNewMessage(e.target.value)
+
+    if (!socket) return
+
+    // Emitir typing_start
+    socket.emit('typing_start')
+
+    // Cancelar timeout previo
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current)
+    }
+
+    // Emitir typing_stop después de 3 segundos de inactividad
+    typingTimeoutRef.current = setTimeout(() => {
+      socket.emit('typing_stop')
+    }, 3000)
+  }
+
   const handleSend = async () => {
     if (!newMessage.trim() || !selectedPhone || sending) return
+
+    // Emitir typing_stop
+    if (socket) {
+      socket.emit('typing_stop')
+    }
 
     setSending(true)
     try {
       await sendMessage(selectedPhone, newMessage)
       setNewMessage('')
-      // Recargar mensajes y conversaciones inmediatamente
-      await loadMessages(selectedPhone)
-      await loadConversations()
+      // No necesitamos recargar mensajes, WebSocket lo hará automáticamente
     } catch (err) {
       console.error('Error sending message:', err)
       alert('Error al enviar mensaje')
@@ -165,6 +227,19 @@ export default function Conversations() {
   )
 
   const selectedConv = conversations.find(c => c.phone === selectedPhone)
+
+  // Mostrar indicador de "escribiendo"
+  const renderTypingIndicator = () => {
+    if (typingOperators.size === 0) return null
+
+    return (
+      <div className="px-4 py-2 bg-gray-50 text-sm text-gray-600 italic">
+        {typingOperators.size === 1
+          ? 'Un operador está escribiendo...'
+          : `${typingOperators.size} operadores están escribiendo...`}
+      </div>
+    )
+  }
 
   if (loading) {
     return (
@@ -255,18 +330,34 @@ export default function Conversations() {
         ) : (
           <>
             {/* Header del chat */}
-            <div className="bg-white border-b border-gray-200 p-4 flex items-center gap-4">
-              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                <User className="w-5 h-5 text-green-600" />
+            <div className="bg-white border-b border-gray-200 p-4 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                  <User className="w-5 h-5 text-green-600" />
+                </div>
+                <div>
+                  <p className="font-medium text-gray-800">
+                    {selectedConv?.contact_name || selectedPhone}
+                  </p>
+                  <p className="text-sm text-gray-500 flex items-center gap-1">
+                    <Phone className="w-3 h-3" />
+                    {selectedPhone}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="font-medium text-gray-800">
-                  {selectedConv?.contact_name || selectedPhone}
-                </p>
-                <p className="text-sm text-gray-500 flex items-center gap-1">
-                  <Phone className="w-3 h-3" />
-                  {selectedPhone}
-                </p>
+              {/* Indicador de conexión WebSocket */}
+              <div className="text-sm">
+                {connected ? (
+                  <span className="text-green-600 flex items-center gap-1">
+                    <span className="w-2 h-2 bg-green-600 rounded-full"></span>
+                    Tiempo real
+                  </span>
+                ) : (
+                  <span className="text-yellow-600 flex items-center gap-1">
+                    <span className="w-2 h-2 bg-yellow-600 rounded-full"></span>
+                    Reconectando...
+                  </span>
+                )}
               </div>
             </div>
 
@@ -319,13 +410,16 @@ export default function Conversations() {
               <div ref={messagesEndRef} />
             </div>
 
+            {/* Indicador de "escribiendo" */}
+            {renderTypingIndicator()}
+
             {/* Input */}
             <div className="bg-white border-t border-gray-200 p-4">
               <div className="flex gap-3">
                 <input
                   type="text"
                   value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
+                  onChange={handleInputChange}
                   onKeyPress={handleKeyPress}
                   placeholder="Escribe un mensaje..."
                   className="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
