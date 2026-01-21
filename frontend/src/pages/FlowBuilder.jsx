@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useParams } from 'react-router-dom'
 import Toolbar from '../components/Toolbar'
 import Sidebar from '../components/Sidebar'
 import FlowCanvas from '../components/FlowCanvas'
@@ -9,19 +10,44 @@ import { useFlowStore } from '../store/flowStore'
 import { fetchFlow, createFromTemplate } from '../api/flows'
 
 export default function FlowBuilder() {
+  const { id } = useParams()
   const [showSimulator, setShowSimulator] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [notification, setNotification] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
   const { loadFlow } = useFlowStore()
 
-  // Check if first visit
+  // Load flow from URL param or check if first visit
   useEffect(() => {
-    const hasSeenOnboarding = localStorage.getItem('flowbuilder_onboarding_seen')
-    if (!hasSeenOnboarding) {
-      setShowOnboarding(true)
+    if (id) {
+      // Load flow from ID
+      loadFlowFromId(id)
+    } else {
+      // Check if first visit for onboarding
+      const hasSeenOnboarding = localStorage.getItem('flowbuilder_onboarding_seen')
+      if (!hasSeenOnboarding) {
+        setShowOnboarding(true)
+      }
     }
-  }, [])
+  }, [id])
+
+  const loadFlowFromId = async (flowId) => {
+    setIsLoading(true)
+    try {
+      const flowData = await fetchFlow(flowId)
+      if (flowData.flow) {
+        loadFlow(flowData.flow)
+        showNotification(`Flujo "${flowData.flow.name}" cargado correctamente`, 'success')
+      } else {
+        throw new Error('No se pudo obtener los datos del flujo')
+      }
+    } catch (err) {
+      console.error('Error loading flow:', err)
+      showNotification(`Error al cargar flujo: ${err.message}`, 'error')
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const showNotification = (message, type = 'info') => {
     setNotification({ message, type })

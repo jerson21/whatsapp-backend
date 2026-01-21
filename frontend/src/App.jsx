@@ -4,6 +4,7 @@ import Layout from './components/Layout'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Conversations from './pages/Conversations'
+import FlowsManager from './pages/FlowsManager'
 import FlowBuilder from './pages/FlowBuilder'
 import FlowLogs from './pages/FlowLogs'
 import Leads from './pages/Leads'
@@ -33,7 +34,8 @@ export default function App() {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="conversations" element={<Conversations />} />
-        <Route path="flows" element={<FlowBuilder />} />
+        <Route path="flows" element={<FlowsManager />} />
+        <Route path="flows/builder/:id?" element={<FlowBuilder />} />
         <Route path="logs" element={<FlowLogs />} />
         <Route path="leads" element={<Leads />} />
         <Route path="analytics" element={<Analytics />} />
