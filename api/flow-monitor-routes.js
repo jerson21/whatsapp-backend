@@ -16,16 +16,22 @@ const activeExecutions = new Map(); // executionId -> execution data
  * Emitir evento a todos los monitores conectados
  */
 function emitFlowEvent(event) {
-  if (!monitorSubscribers.size) return;
-
-  const data = `data: ${JSON.stringify(event)}\n\n`;
-  for (const res of monitorSubscribers) {
-    try {
-      res.write(data);
-    } catch (err) {
-      // Si falla, el cliente se desconectó
-      monitorSubscribers.delete(res);
+  // Emitir por SSE
+  if (monitorSubscribers.size > 0) {
+    const data = `data: ${JSON.stringify(event)}\n\n`;
+    for (const res of monitorSubscribers) {
+      try {
+        res.write(data);
+      } catch (err) {
+        // Si falla, el cliente se desconectó
+        monitorSubscribers.delete(res);
+      }
     }
+  }
+
+  // Emitir por Socket.IO
+  if (global.io) {
+    global.io.of('/monitor').to('flow_monitor').emit('flow_event', event);
   }
 
   // Actualizar cache de ejecuciones activas

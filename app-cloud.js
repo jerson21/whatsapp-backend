@@ -2,6 +2,8 @@
 
 require('dotenv').config();
 const express = require('express');
+const { createServer } = require('http');
+const { Server } = require('socket.io');
 const cors = require('cors');
 const P = require('pino');
 const crypto = require('crypto');
@@ -1189,6 +1191,21 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               at: Date.now()
             });
 
+            // Emitir por Socket.IO
+            if (global.io) {
+              global.io.of('/chat').to(`session_${sessionId}`).emit('new_message', {
+                type: 'message',
+                direction: 'in',
+                text: textForDB,
+                media: mediaForSSE,
+                mediaId: mediaFields?.media_id || null,
+                msgId: waMsgId,
+                dbId: dbMessageId,
+                status: 'received',
+                timestamp: Date.now()
+              });
+            }
+
             logger.info(`📨 IN ${from}: ${String(textForDB).substring(0, 160)}`);
 
             // Notificar inbox (último mensaje y contadores)
@@ -1242,6 +1259,17 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                   const lowConf = Number(det.confidence || 0) < INTENT_MIN_CONFIDENCE;
                   if (lowConf) {
                     ssePush(sessionId, { type: 'agent_required', intent: det.intent, confidence: det.confidence, at: Date.now() });
+                    // Emitir escalamiento por Socket.IO
+                    if (global.io) {
+                      global.io.of('/chat').to(`session_${sessionId}`).emit('escalation', {
+                        sessionId,
+                        phone: from,
+                        reason: 'low_confidence',
+                        intent: det.intent,
+                        confidence: det.confidence,
+                        timestamp: Date.now()
+                      });
+                    }
                   }
                   if (ROUTING_ENABLED && !lowConf) {
                     await routeByIntent(det.intent, { sessionId, phone: from, text: textForDB });
@@ -1937,15 +1965,28 @@ app.post('/api/chat/send', sendLimiter, async (req, res) => {
     const messageId = result.insertId;
 
     // Enviar por SSE
-    ssePush(sessionId, { 
-      type: 'message', 
-      direction: 'out', 
-      text, 
+    ssePush(sessionId, {
+      type: 'message',
+      direction: 'out',
+      text,
       msgId: waMsgId,
       dbId: messageId,
       status: 'sent',
-      at: Date.now() 
+      at: Date.now()
     });
+
+    // Emitir por Socket.IO
+    if (global.io) {
+      global.io.of('/chat').to(`session_${sessionId}`).emit('new_message', {
+        type: 'message',
+        direction: 'out',
+        text,
+        msgId: waMsgId,
+        dbId: messageId,
+        status: 'sent',
+        timestamp: Date.now()
+      });
+    }
 
     res.json({ ok: true, msgId: waMsgId, messageId });
   } catch (e) {
@@ -2203,6 +2244,15 @@ async function applyRouteAction(route, { sessionId, phone, text, interactive }) 
     ssePush(Number(sessionId), { type: 'mode_changed', mode, at: Date.now() });
     if (mode === 'manual') {
       ssePush(Number(sessionId), { type: 'agent_required', reason: 'route_set_manual', at: Date.now() });
+      // Emitir escalamiento por Socket.IO
+      if (global.io) {
+        global.io.of('/chat').to(`session_${sessionId}`).emit('escalation', {
+          sessionId,
+          phone,
+          reason: 'route_set_manual',
+          timestamp: Date.now()
+        });
+      }
     }
     return { ok: true };
   }
@@ -4339,8 +4389,113 @@ registerRoutes(app, panelAuth);
 const visualFlowsRoutesWithReload = require('./api/flows-routes');
 app.use('/api/visual-flows-live', visualFlowsRoutesWithReload(pool, reloadVisualFlows));
 
-app.listen(PORT, async () => {
+/* ========= Socket.IO Setup ========= */
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: {
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.size === 0) return callback(null, true);
+      if (allowedOrigins.has(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true
+  },
+  transports: ['websocket', 'polling']
+});
+
+// Exponer io globalmente para uso en otros módulos
+global.io = io;
+
+// Namespace para chat (múltiples operadores viendo mismas conversaciones)
+const chatNamespace = io.of('/chat');
+
+// Autenticación de sockets
+chatNamespace.use(async (socket, next) => {
+  const { sessionId, token } = socket.handshake.auth;
+
+  if (!sessionId || !token) {
+    return next(new Error('Authentication error'));
+  }
+
+  // Validar sessionId y token en BD
+  try {
+    const [rows] = await pool.query(
+      'SELECT phone FROM chat_sessions WHERE id=? AND token=? AND status="OPEN"',
+      [sessionId, token]
+    );
+
+    if (!rows.length) {
+      return next(new Error('Invalid session'));
+    }
+
+    socket.sessionId = Number(sessionId);
+    socket.phone = rows[0].phone;
+    next();
+  } catch (e) {
+    next(new Error('Database error'));
+  }
+});
+
+chatNamespace.on('connection', (socket) => {
+  const { sessionId, phone } = socket;
+
+  logger.info({ sessionId, phone, socketId: socket.id }, 'Socket conectado');
+
+  // Unirse a room de la conversación
+  socket.join(`session_${sessionId}`);
+
+  // Notificar a otros operadores que alguien se unió
+  socket.to(`session_${sessionId}`).emit('operator_joined', {
+    socketId: socket.id,
+    timestamp: Date.now()
+  });
+
+  // Evento: Operador está escribiendo
+  socket.on('typing_start', () => {
+    socket.to(`session_${sessionId}`).emit('operator_typing', {
+      socketId: socket.id,
+      typing: true
+    });
+  });
+
+  socket.on('typing_stop', () => {
+    socket.to(`session_${sessionId}`).emit('operator_typing', {
+      socketId: socket.id,
+      typing: false
+    });
+  });
+
+  // Desconexión
+  socket.on('disconnect', () => {
+    logger.info({ sessionId, socketId: socket.id }, 'Socket desconectado');
+    socket.to(`session_${sessionId}`).emit('operator_left', {
+      socketId: socket.id,
+      timestamp: Date.now()
+    });
+  });
+});
+
+// Namespace para monitor de flujos
+const monitorNamespace = io.of('/monitor');
+
+monitorNamespace.on('connection', (socket) => {
+  logger.info({ socketId: socket.id }, 'Monitor conectado');
+
+  // Unirse a room global de monitor
+  socket.join('flow_monitor');
+
+  socket.on('disconnect', () => {
+    logger.info({ socketId: socket.id }, 'Monitor desconectado');
+  });
+});
+
+httpServer.listen(PORT, async () => {
   logger.info(`HTTP listo en http://0.0.0.0:${PORT}`);
+  logger.info('✅ Socket.IO inicializado con namespaces /chat y /monitor');
   try {
     await ensureSchema();
     logger.info('✅ Schema verificado/creado correctamente');
