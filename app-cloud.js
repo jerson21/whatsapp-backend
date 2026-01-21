@@ -1248,37 +1248,8 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               }
             } catch (e) { logger.error({ e }, 'interactive action error'); }
 
-            // (Opcional) Intent detection & routing (solo si está habilitado)
-            if (INTENT_DETECT_ENABLED && textForDB) {
-              try {
-                const det = await detectIntent(textForDB);
-                if (det?.intent) {
-                  await pool.query(
-                    `UPDATE chat_sessions SET last_intent=?, intent_confidence=? WHERE id=?`,
-                    [det.intent, det.confidence ?? null, sessionId]
-                  );
-                  // Alerta a agente si confianza baja o intención marcada como requiere agente por configuración
-                  const lowConf = Number(det.confidence || 0) < INTENT_MIN_CONFIDENCE;
-                  if (lowConf) {
-                    ssePush(sessionId, { type: 'agent_required', intent: det.intent, confidence: det.confidence, at: Date.now() });
-                    // Emitir escalamiento por Socket.IO
-                    if (global.io) {
-                      global.io.of('/chat').to(`session_${sessionId}`).emit('escalation', {
-                        sessionId,
-                        phone: from,
-                        reason: 'low_confidence',
-                        intent: det.intent,
-                        confidence: det.confidence,
-                        timestamp: Date.now()
-                      });
-                    }
-                  }
-                  if (ROUTING_ENABLED && !lowConf) {
-                    await routeByIntent(det.intent, { sessionId, phone: from, text: textForDB });
-                  }
-                }
-              } catch (e) { logger.error({ e }, 'intent detect/route error'); }
-            }
+            // 🆕 LEGACY detectIntent ELIMINADO - Ahora usa MessageClassifier en Visual Flow Engine
+            // La clasificación de intents se hace en chatbot/chatbot.js con el MessageClassifier
 
             // (Opcional) Orchestrator
             let handledByOrchestrator = false;
@@ -2188,45 +2159,9 @@ app.post('/api/chat/send-template', sendLimiter, express.json(), async (req, res
 /* ========= Chatbot handler moved to ./chatbot/chatbot.js ========= */
 
 /* ========= Intent Detection & Routing (Professional v1) ========= */
-async function detectIntent(text) {
-  try {
-    const normalized = String(text || '').toLowerCase();
-    // Lightweight rules first (fast path)
-    const rules = [
-      { intent: 'consulta_pedido', rx: /(estado|seguimiento|consulta).*pedido|mi\s+pedido|donde\s+va\s+mi\s+pedido/ },
-      { intent: 'consulta_horario', rx: /(horario|hora|abren|cierran)/ },
-      { intent: 'agendar_pedido', rx: /(agendar|agendamiento|programar).*pedido|quiero\s+agendar/ },
-      { intent: 'consulta_precio', rx: /(precio|cuanto\s+vale|cost(o|a))/ }
-    ];
-    for (const r of rules) {
-      if (r.rx.test(normalized)) return { intent: r.intent, confidence: 0.85, provider: 'rule' };
-    }
-
-    // Optional LLM classification for better coverage
-    if (OPENAI_API_KEY && INTENT_DETECT_ENABLED) {
-      const prompt = [
-        { role: 'system', content: 'Clasifica la intención del mensaje del cliente en una sola etiqueta corta, de esta lista: consulta_pedido, consulta_horario, agendar_pedido, consulta_precio, otro. Responde JSON {intent, confidence} con confidence entre 0 y 1.' },
-        { role: 'user', content: String(text) }
-      ];
-      const answer = await getAIResponse(prompt, CHATBOT_AI_MODEL);
-      try {
-        const j = JSON.parse(answer);
-        if (j && j.intent) {
-          return { intent: String(j.intent), confidence: Math.max(0, Math.min(1, Number(j.confidence || 0.6))), provider: 'llm' };
-        }
-      } catch {}
-      // Fallback if not JSON
-      if (typeof answer === 'string' && answer.length) {
-        const simple = answer.toLowerCase();
-        if (simple.includes('pedido')) return { intent: 'consulta_pedido', confidence: 0.6, provider: 'llm_text' };
-        if (simple.includes('horario')) return { intent: 'consulta_horario', confidence: 0.6, provider: 'llm_text' };
-      }
-    }
-  } catch (e) {
-    logger.error({ e }, 'detectIntent error');
-  }
-  return { intent: 'otro', confidence: 0.4, provider: 'fallback' };
-}
+// 🆕 LEGACY detectIntent ELIMINADO
+// La clasificación de intents ahora la maneja MessageClassifier en chatbot/message-classifier.js
+// Las reglas de intent están en la tabla classifier_rules de la BD
 
 async function signAndPostAction(url, payload) {
   const target = url || ACTIONS_HOOK_URL;
@@ -2299,20 +2234,8 @@ async function applyRouteAction(route, { sessionId, phone, text, interactive }) 
   return { ok: false, error: 'unknown_action' };
 }
 
-async function routeByIntent(intentName, ctx) {
-  const [rows] = await pool.query(`
-    SELECT * FROM intent_routes WHERE active=1 AND intent_name=? ORDER BY priority ASC, id ASC
-  `, [String(intentName)]);
-  for (const r of rows) {
-    try {
-      const result = await applyRouteAction(r, ctx);
-      if (result?.ok) return result;
-    } catch (e) {
-      logger.error({ e, routeId: r.id }, 'routeByIntent error');
-    }
-  }
-  return null;
-}
+// 🆕 LEGACY routeByIntent ELIMINADO - Ya no se usa
+// El routing por intent ahora se hace en Visual Flow Engine con triggers de tipo 'intent'
 
 async function handleTemplateButtonAction(replyId, ctx) {
   // 1. Intentar sistema antiguo (template_button_actions)
