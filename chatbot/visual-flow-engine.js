@@ -164,6 +164,35 @@ class VisualFlowEngine {
 
         return true;
 
+      case 'intent':
+        // 🆕 Trigger simple por intent con threshold
+        if (!classification || !classification.intent) return false;
+
+        const targetIntents = triggerConfig.intents || [];
+        const confidenceThreshold = triggerConfig.confidence_threshold || 0.5;
+
+        const detectedIntent = classification.intent.type;
+        const detectedConfidence = classification.intent.confidence || 0;
+
+        // Log para debugging
+        logger.debug({
+          targetIntents,
+          detectedIntent,
+          detectedConfidence,
+          confidenceThreshold
+        }, 'Intent trigger evaluation');
+
+        // Verificar si el intent detectado está en la lista y supera el threshold
+        if (targetIntents.includes(detectedIntent) && detectedConfidence >= confidenceThreshold) {
+          logger.info({
+            detectedIntent,
+            confidence: detectedConfidence,
+            threshold: confidenceThreshold
+          }, '🎯 Intent trigger matched');
+          return true;
+        }
+        return false;
+
       case 'always':
         return true;
 

@@ -32,10 +32,10 @@
   - Cambié sesiones existentes a 'automatic'
   - Backend reiniciado
 
-- [ ] 🔧 **PENDIENTE: Duplicación de respuestas**
-  - Causa: Chatbot legacy + Visual Flows pueden responder ambos
-  - Solución: Desactivar chatbot legacy (ver `docs/CHATBOT_ARCHITECTURE.md`)
-  - Archivos: `app-cloud.js`
+- [x] ✅ **COMPLETADO: Duplicación de respuestas**
+  - Chatbot legacy desactivado en `chatbot/chatbot.js`
+  - Solo Visual Flows responde ahora
+  - Si no hay flujo → mensaje fallback simple
 
 - [ ] 🔧 **PENDIENTE: Clasificación de intenciones no se usa**
   - MessageClassifier existe pero no hace routing
@@ -434,7 +434,7 @@
 
 **Fases Completadas**: Infraestructura lista
 
-- [x] FASE 0: Arreglos Inmediatos (80%) - Modo automatic OK, falta desactivar legacy
+- [x] FASE 0: Arreglos Inmediatos (100%) - Modo automatic OK, legacy desactivado
 - [ ] FASE 1: Arquitectura Intent-First (10%) - Documentado, pendiente implementar
 - [ ] FASE 2: Migrar Legacy (0%)
 - [ ] FASE 3: Modos Automáticos (0%)
