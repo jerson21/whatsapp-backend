@@ -15,6 +15,9 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
   const CHATBOT_MODE_DEFAULT = process.env.CHATBOT_MODE_DEFAULT || 'automatic';
   const CHATBOT_AUTO_REPLY_DELAY = Number(process.env.CHATBOT_AUTO_REPLY_DELAY || 1000);
 
+  // Toggle global para habilitar/deshabilitar visual flows (puede cambiarse en runtime)
+  let visualFlowsGlobalEnabled = String(process.env.VISUAL_FLOWS_ENABLED || 'true').toLowerCase() === 'true';
+
   // State per session
   const sessionModes = new Map(); // sessionId -> mode
 
@@ -83,6 +86,19 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
           type: 'ai_mode',
           mode: 'manual',
           message: 'Nuevo mensaje recibido - Responde manualmente'
+        });
+        return;
+      }
+
+      // ========================================
+      // VERIFICAR SI VISUAL FLOWS ESTÁ HABILITADO GLOBALMENTE
+      // ========================================
+      if (!visualFlowsGlobalEnabled) {
+        logger.info({ sessionId, mode }, '🤖 Visual Flows DESHABILITADO globalmente - no respondiendo');
+        ssePush(sessionId, {
+          type: 'visual_flows_disabled',
+          mode: 'off',
+          message: 'Visual Flows deshabilitado - modo manual activo'
         });
         return;
       }
@@ -296,6 +312,41 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
         res.json({ ok: true, messageId, waMsgId, sent: true });
       } catch (e) {
         logger.error({ e }, 'send-reply error');
+        res.status(500).json({ ok: false, error: e.message });
+      }
+    });
+
+    // ========================================
+    // TOGGLE GLOBAL DE VISUAL FLOWS
+    // ========================================
+
+    // GET: Obtener estado actual de visual flows
+    app.get('/api/settings/visual-flows', (req, res) => {
+      res.json({
+        ok: true,
+        enabled: visualFlowsGlobalEnabled,
+        message: visualFlowsGlobalEnabled ? 'Visual Flows activo' : 'Visual Flows desactivado'
+      });
+    });
+
+    // POST: Cambiar estado de visual flows
+    app.post('/api/settings/visual-flows', (req, res) => {
+      try {
+        const { enabled } = req.body || {};
+
+        if (typeof enabled !== 'boolean') {
+          return res.status(400).json({ ok: false, error: 'Campo "enabled" requerido (boolean)' });
+        }
+
+        visualFlowsGlobalEnabled = enabled;
+        logger.info({ enabled }, '🔄 Visual Flows global toggle changed');
+
+        res.json({
+          ok: true,
+          enabled: visualFlowsGlobalEnabled,
+          message: enabled ? 'Visual Flows ACTIVADO' : 'Visual Flows DESACTIVADO'
+        });
+      } catch (e) {
         res.status(500).json({ ok: false, error: e.message });
       }
     });

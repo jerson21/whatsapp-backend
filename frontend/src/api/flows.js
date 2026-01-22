@@ -123,3 +123,21 @@ export async function testMetaTemplate({ templateName, languageCode, phone, para
   })
   return handleResponse(res, 'Error al enviar plantilla de prueba')
 }
+
+// ============================================
+// TOGGLE GLOBAL DE VISUAL FLOWS
+// ============================================
+
+export async function getVisualFlowsStatus() {
+  const res = await fetch('/api/settings/visual-flows')
+  return handleResponse(res, 'Error al obtener estado de Visual Flows')
+}
+
+export async function setVisualFlowsStatus(enabled) {
+  const res = await fetch('/api/settings/visual-flows', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled })
+  })
+  return handleResponse(res, 'Error al cambiar estado de Visual Flows')
+}

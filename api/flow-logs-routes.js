@@ -31,7 +31,6 @@ module.exports = function(db) {
           flow_name,
           flow_slug,
           phone,
-          contact_name,
           session_id,
           status,
           trigger_message,

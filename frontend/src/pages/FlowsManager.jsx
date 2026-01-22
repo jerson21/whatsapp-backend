@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchFlows, fetchTemplates, createFromTemplate, activateFlow, deleteFlow, duplicateFlow, fetchMetaTemplates } from '../api/flows'
+import { fetchFlows, fetchTemplates, createFromTemplate, activateFlow, deleteFlow, duplicateFlow, fetchMetaTemplates, getVisualFlowsStatus, setVisualFlowsStatus } from '../api/flows'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import TemplateTestModal from '../components/TemplateTestModal'
@@ -17,9 +17,12 @@ export default function FlowsManager() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [notification, setNotification] = useState(null)
+  const [visualFlowsEnabled, setVisualFlowsEnabled] = useState(true)
+  const [togglingFlows, setTogglingFlows] = useState(false)
 
   useEffect(() => {
     loadData()
+    loadVisualFlowsStatus()
   }, [])
 
   useEffect(() => {
@@ -27,6 +30,33 @@ export default function FlowsManager() {
       loadMetaTemplates()
     }
   }, [activeTab, metaFilters])
+
+  const loadVisualFlowsStatus = async () => {
+    try {
+      const data = await getVisualFlowsStatus()
+      setVisualFlowsEnabled(data.enabled)
+    } catch (err) {
+      console.error('Error loading visual flows status:', err)
+    }
+  }
+
+  const handleToggleVisualFlows = async () => {
+    try {
+      setTogglingFlows(true)
+      const newValue = !visualFlowsEnabled
+      const data = await setVisualFlowsStatus(newValue)
+      setVisualFlowsEnabled(data.enabled)
+      showNotification(
+        data.enabled ? 'Modo automático ACTIVADO' : 'Modo automático DESACTIVADO',
+        data.enabled ? 'success' : 'info'
+      )
+    } catch (err) {
+      console.error('Error toggling visual flows:', err)
+      showNotification(`Error: ${err.message}`, 'error')
+    } finally {
+      setTogglingFlows(false)
+    }
+  }
 
   const loadData = async () => {
     try {
@@ -169,11 +199,44 @@ export default function FlowsManager() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Gestión de Flujos</h1>
-        <p className="text-gray-600">
-          Administra tus flujos conversacionales y crea nuevos desde plantillas predefinidas
-        </p>
+      <div className="mb-6 flex justify-between items-start">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Gestión de Flujos</h1>
+          <p className="text-gray-600">
+            Administra tus flujos conversacionales y crea nuevos desde plantillas predefinidas
+          </p>
+        </div>
+
+        {/* Toggle Modo Automático */}
+        <div className={`flex items-center gap-3 px-4 py-3 rounded-lg border ${
+          visualFlowsEnabled
+            ? 'bg-green-50 border-green-200'
+            : 'bg-gray-50 border-gray-300'
+        }`}>
+          <div className="text-right">
+            <p className={`text-sm font-medium ${visualFlowsEnabled ? 'text-green-800' : 'text-gray-600'}`}>
+              Modo Automático
+            </p>
+            <p className={`text-xs ${visualFlowsEnabled ? 'text-green-600' : 'text-gray-500'}`}>
+              {visualFlowsEnabled ? 'Bot respondiendo' : 'Bot pausado'}
+            </p>
+          </div>
+          <button
+            onClick={handleToggleVisualFlows}
+            disabled={togglingFlows}
+            className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+              visualFlowsEnabled
+                ? 'bg-green-500 focus:ring-green-500'
+                : 'bg-gray-300 focus:ring-gray-500'
+            } ${togglingFlows ? 'opacity-50 cursor-wait' : 'cursor-pointer'}`}
+          >
+            <span
+              className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${
+                visualFlowsEnabled ? 'translate-x-8' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
       </div>
 
       {/* Notification */}
