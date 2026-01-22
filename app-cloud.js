@@ -2176,9 +2176,27 @@ app.post('/api/chat/send-template', sendLimiter, express.json(), async (req, res
     // Enviar
     const waMsgId = await sendTemplateViaCloudAPI(phone, String(templateName), String(languageCode), comps);
 
-    // Persistencia mínima (resumen)
-    const summary = `[TEMPLATE:${templateName} ${languageCode}] ` +
-      (Array.isArray(bodyParams) && bodyParams.length ? `body=${JSON.stringify(bodyParams).slice(0, 400)}` : '');
+    // Persistencia mejorada (resumen con parámetros)
+    let summary = `[TEMPLATE:${templateName} ${languageCode}]`;
+
+    // Si hay bodyParams (formato simplificado)
+    if (Array.isArray(bodyParams) && bodyParams.length) {
+      summary += ` body=${JSON.stringify(bodyParams).slice(0, 400)}`;
+    }
+    // Si hay components nativos, extraer parámetros para mostrar
+    else if (Array.isArray(comps) && comps.length) {
+      const params = [];
+      for (const comp of comps) {
+        if (comp.parameters && Array.isArray(comp.parameters)) {
+          for (const p of comp.parameters) {
+            if (p.text) params.push(p.text);
+          }
+        }
+      }
+      if (params.length) {
+        summary += ` params=${JSON.stringify(params).slice(0, 400)}`;
+      }
+    }
 
     const [result] = await pool.query(
       `INSERT INTO chat_messages (session_id, direction, text, wa_jid, wa_msg_id, status, is_ai_generated)
