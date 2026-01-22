@@ -98,3 +98,28 @@ export async function createFromTemplate(templateId, name) {
   })
   return handleResponse(res, 'Error al crear desde plantilla')
 }
+
+// ============================================
+// PLANTILLAS DE META (WhatsApp Business)
+// ============================================
+
+export async function fetchMetaTemplates(filters = {}) {
+  const params = new URLSearchParams()
+  if (filters.status) params.append('status', filters.status)
+  if (filters.category) params.append('category', filters.category)
+  if (filters.lang) params.append('lang', filters.lang)
+  params.append('with', 'components')
+  params.append('limit', '200')
+
+  const res = await fetch(`/api/chat/templates?${params}`)
+  return handleResponse(res, 'Error al cargar plantillas de Meta')
+}
+
+export async function testMetaTemplate({ templateName, languageCode, phone, parameters = [], headerParams = [], buttonParams = [] }) {
+  const res = await fetch('/api/templates/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ templateName, languageCode, phone, parameters, headerParams, buttonParams })
+  })
+  return handleResponse(res, 'Error al enviar plantilla de prueba')
+}

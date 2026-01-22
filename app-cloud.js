@@ -2276,6 +2276,73 @@ app.post('/api/chat/send-template', sendLimiter, express.json(), async (req, res
   }
 });
 
+// Endpoint simple para probar plantillas (sin sesión requerida)
+app.post('/api/templates/test', sendLimiter, express.json(), async (req, res) => {
+  const { templateName, languageCode, phone, parameters, headerParams, buttonParams } = req.body || {};
+
+  try {
+    if (!templateName || !languageCode || !phone) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Campos requeridos: templateName, languageCode, phone'
+      });
+    }
+
+    // Normalizar teléfono (agregar código de país si no lo tiene)
+    let normalizedPhone = String(phone).replace(/\D/g, '');
+    if (!normalizedPhone.startsWith('56') && normalizedPhone.length === 9) {
+      normalizedPhone = '56' + normalizedPhone;
+    }
+
+    // Construir componentes
+    const components = [];
+
+    // Header params (si existen)
+    if (Array.isArray(headerParams) && headerParams.length > 0) {
+      components.push({
+        type: 'header',
+        parameters: headerParams.map(p => ({ type: 'text', text: String(p) }))
+      });
+    }
+
+    // Body params (si existen)
+    if (Array.isArray(parameters) && parameters.length > 0) {
+      components.push({
+        type: 'body',
+        parameters: parameters.map(p => ({ type: 'text', text: String(p) }))
+      });
+    }
+
+    // Button params (si existen)
+    if (Array.isArray(buttonParams) && buttonParams.length > 0) {
+      buttonParams.forEach((param, idx) => {
+        components.push({
+          type: 'button',
+          sub_type: 'url',
+          index: idx,
+          parameters: [{ type: 'text', text: String(param) }]
+        });
+      });
+    }
+
+    logger.info({ templateName, languageCode, phone: normalizedPhone, components }, '🧪 Probando plantilla');
+
+    const waMsgId = await sendTemplateViaCloudAPI(normalizedPhone, templateName, languageCode, components);
+
+    logger.info({ waMsgId, templateName }, '✅ Plantilla de prueba enviada');
+
+    res.json({
+      ok: true,
+      waMsgId,
+      message: `Plantilla "${templateName}" enviada a ${normalizedPhone}`,
+      sentTo: normalizedPhone
+    });
+
+  } catch (e) {
+    logger.error({ error: e.message, templateName, phone }, '❌ Error enviando plantilla de prueba');
+    res.status(400).json({ ok: false, error: e.message });
+  }
+});
 
 
 /* ========= Chatbot control (API) -> Rutas movidas a chatbot/chatbot.js ========= */
