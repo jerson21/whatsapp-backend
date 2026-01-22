@@ -573,10 +573,49 @@ NUNCA:
           valueToSave = matchedOption.value || matchedOption.label;
           logger.debug({ matched: matchedOption.label, value: valueToSave }, 'Option matched');
         } else {
-          // No matcheó ninguna opción - Re-preguntar amablemente
-          logger.info({ message, optionsCount: currentNode.options.length }, 'No option matched - asking again');
+          // No matcheó ninguna opción - Verificar si quiere cambiar de tema
+          logger.info({ message, optionsCount: currentNode.options.length }, 'No option matched - checking if user wants to change topic');
 
-          // Enviar mensaje de ayuda y re-enviar las opciones
+          // Verificar si el usuario quiere cambiar de tema (incluso con mensajes cortos)
+          if (this.classifier && message.length >= 5) {
+            try {
+              const classification = await this.classifier.classify(message, context);
+              const detectedIntent = classification?.intent?.type;
+              const confidence = classification?.intent?.confidence || 0;
+
+              // Intents que permiten salir del flujo actual
+              const escapeIntents = ['complaint', 'support', 'greeting', 'sales'];
+              const currentFlowIntents = flow.triggerConfig?.intents || [];
+
+              if (escapeIntents.includes(detectedIntent) && confidence >= 0.5 && !currentFlowIntents.includes(detectedIntent)) {
+                logger.info({
+                  phone,
+                  currentFlow: flow.name,
+                  detectedIntent,
+                  confidence
+                }, '🔀 Usuario quiere cambiar de tema durante pregunta');
+
+                // Limpiar sesión actual
+                this.sessionStates.delete(phone);
+
+                // Buscar flujo que coincida con el nuevo intent
+                const newFlow = this.activeFlows.find(f => {
+                  const intents = f.triggerConfig?.intents || [];
+                  return intents.includes(detectedIntent);
+                });
+
+                if (newFlow) {
+                  return this.startFlow(phone, newFlow, message, context);
+                } else {
+                  return this.handleAIFallback(phone, message, context);
+                }
+              }
+            } catch (err) {
+              logger.warn({ err, phone }, 'Error checking intent during re-ask');
+            }
+          }
+
+          // Si llegamos aquí, re-preguntar amablemente
           const helpMessage = '🤔 No entendí tu respuesta. Por favor selecciona una de las opciones:';
 
           if (this.sendMessage) {
