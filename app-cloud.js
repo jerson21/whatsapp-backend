@@ -2916,8 +2916,9 @@ const classifierRoutes = require('./api/classifier-routes');
 app.use('/api/classifier', classifierRoutes(pool, messageClassifier));
 
 /* ========= API: Visual Flows (Flow Builder) ========= */
-const visualFlowsRoutes = require('./api/flows-routes');
-app.use('/api/visual-flows', visualFlowsRoutes(pool));
+// NOTA: El endpoint principal /api/visual-flows-live se registra más abajo
+// después de createChatbot() para tener acceso a reloadVisualFlows
+// Ver línea ~4443
 
 /* ========= API: Flow Execution Logs ========= */
 const flowLogsRoutes = require('./api/flow-logs-routes');
@@ -4441,6 +4442,7 @@ registerRoutes(app, panelAuth);
 // Esto permite que al activar/desactivar un flujo, se recargue en memoria
 const visualFlowsRoutesWithReload = require('./api/flows-routes');
 app.use('/api/visual-flows-live', visualFlowsRoutesWithReload(pool, reloadVisualFlows));
+app.use('/api/visual-flows', visualFlowsRoutesWithReload(pool, reloadVisualFlows)); // Alias sin -live
 
 /* ========= Socket.IO Setup ========= */
 const httpServer = createServer(app);
