@@ -207,6 +207,32 @@ class VisualFlowEngine {
   async startFlow(phone, flow, initialMessage, context) {
     logger.info({ phone, flowId: flow.id, flowName: flow.name }, 'Starting visual flow');
 
+    // CARGAR DATOS GUARDADOS DEL USUARIO
+    const savedFields = await this.loadContactFields(phone);
+    const hasSavedData = Object.keys(savedFields).length > 0;
+
+    // Verificar si este flujo tiene skip_if_completed habilitado
+    const skipIfCompleted = flow.triggerConfig?.skip_if_completed !== false; // Por defecto true
+
+    // Si el usuario ya tiene nombre guardado y es un flujo de greeting/onboarding,
+    // usar saludo personalizado en lugar de repetir el flujo completo
+    if (hasSavedData && savedFields.nombre && skipIfCompleted) {
+      const isGreetingFlow = flow.triggerConfig?.type === 'keyword' &&
+        (flow.triggerConfig?.keywords?.some(k => ['hola', 'hi', 'buenas', 'buenos'].includes(k.toLowerCase())) ||
+         flow.slug?.includes('onboarding') || flow.slug?.includes('saludo') || flow.slug?.includes('bienvenida'));
+
+      if (isGreetingFlow) {
+        logger.info({ phone, flowId: flow.id, nombre: savedFields.nombre }, 'User already completed onboarding, sending personalized greeting');
+
+        // Enviar saludo personalizado en lugar de repetir el flujo
+        if (this.sendMessage) {
+          await this.sendMessage(phone, `¡Hola de nuevo ${savedFields.nombre}! 👋 ¿En qué puedo ayudarte hoy?`);
+        }
+
+        return { type: 'personalized_greeting', user: savedFields.nombre };
+      }
+    }
+
     // Clasificar mensaje para logging
     let classification = null;
     if (this.classifier) {
@@ -225,7 +251,7 @@ class VisualFlowEngine {
       classification
     );
 
-    // Crear estado de sesión
+    // Crear estado de sesión CON DATOS GUARDADOS
     const sessionState = {
       flowId: flow.id,
       flowSlug: flow.slug,
@@ -233,6 +259,7 @@ class VisualFlowEngine {
       variables: {
         phone,
         initial_message: initialMessage,
+        ...savedFields,  // Incluir datos guardados del usuario
         ...context
       },
       startedAt: new Date(),
@@ -294,12 +321,33 @@ class VisualFlowEngine {
 
       // Si hay opciones, intentar matchear
       if (currentNode.options && currentNode.options.length > 0) {
-        const matchedOption = currentNode.options.find(
-          opt => opt.label.toLowerCase() === message.toLowerCase() ||
-                 opt.value === message
-        );
+        let matchedOption = null;
+
+        // 1. Buscar por número (1, 2, 3...)
+        const numericInput = parseInt(message.trim(), 10);
+        if (!isNaN(numericInput) && numericInput >= 1 && numericInput <= currentNode.options.length) {
+          matchedOption = currentNode.options[numericInput - 1];
+          logger.debug({ numericInput, matchedOption: matchedOption?.label }, 'Matched option by number');
+        }
+
+        // 2. Si no matcheó por número, buscar por label o value
+        if (!matchedOption) {
+          matchedOption = currentNode.options.find(
+            opt => opt.label.toLowerCase() === message.toLowerCase() ||
+                   opt.value?.toLowerCase() === message.toLowerCase()
+          );
+        }
+
+        // 3. Si aún no matcheó, buscar si el mensaje contiene el label
+        if (!matchedOption) {
+          matchedOption = currentNode.options.find(
+            opt => message.toLowerCase().includes(opt.label.toLowerCase())
+          );
+        }
+
         if (matchedOption) {
           valueToSave = matchedOption.value;
+          logger.debug({ matched: matchedOption.label, value: valueToSave }, 'Option matched');
         }
       }
 
@@ -396,7 +444,9 @@ class VisualFlowEngine {
           return this.executeNode(phone, flow, afterMessage, sessionState);
         }
 
-        // Flow completed
+        // Flow completed - guardar variables y marcar como completado
+        await this.saveContactFields(phone, sessionState.variables);
+        await this.markFlowCompleted(phone, flow.id, flow.slug);
         await this.updateLogVariables(sessionState.executionLogId, sessionState.variables);
         await this.completeExecutionLog(sessionState.executionLogId, 'completed', node.id, 'message');
         this.sessionStates.delete(phone);
@@ -486,6 +536,8 @@ class VisualFlowEngine {
         }
         await logStep(`Transferred to human: ${transferText}`);
 
+        // Guardar variables antes de transferir
+        await this.saveContactFields(phone, sessionState.variables);
         await this.updateLogVariables(sessionState.executionLogId, sessionState.variables);
         await this.completeExecutionLog(sessionState.executionLogId, 'transferred', node.id, 'transfer');
         this.sessionStates.delete(phone);
@@ -497,6 +549,10 @@ class VisualFlowEngine {
 
       case 'end':
         await logStep('Flow ended');
+        // GUARDAR variables importantes del usuario para futuras interacciones
+        await this.saveContactFields(phone, sessionState.variables);
+        // MARCAR flujo como completado
+        await this.markFlowCompleted(phone, flow.id, flow.slug);
         await this.updateLogVariables(sessionState.executionLogId, sessionState.variables);
         await this.completeExecutionLog(sessionState.executionLogId, 'completed', node.id, 'end');
         this.sessionStates.delete(phone);
@@ -545,6 +601,9 @@ class VisualFlowEngine {
             return this.executeNode(phone, flow, afterAI, sessionState);
           }
 
+          // Guardar variables y marcar flujo como completado
+          await this.saveContactFields(phone, sessionState.variables);
+          await this.markFlowCompleted(phone, flow.id, flow.slug);
           await this.updateLogVariables(sessionState.executionLogId, sessionState.variables);
           await this.completeExecutionLog(sessionState.executionLogId, 'completed', node.id, 'ai_response');
           this.sessionStates.delete(phone);
@@ -843,6 +902,111 @@ class VisualFlowEngine {
    */
   getSessionState(phone) {
     return this.sessionStates.get(phone);
+  }
+
+  // ========================================
+  // PERSISTENT CONTACT DATA
+  // ========================================
+
+  /**
+   * Cargar custom fields guardados del contacto
+   */
+  async loadContactFields(phone) {
+    try {
+      const [rows] = await this.db.query(`
+        SELECT field_name, field_value, field_type
+        FROM contact_custom_fields
+        WHERE phone = ?
+      `, [phone]);
+
+      const fields = {};
+      for (const row of rows) {
+        let value = row.field_value;
+        // Parse según tipo
+        if (row.field_type === 'number') value = Number(value);
+        else if (row.field_type === 'boolean') value = value === 'true';
+        else if (row.field_type === 'json') {
+          try { value = JSON.parse(value); } catch(e) {}
+        }
+        fields[row.field_name] = value;
+      }
+
+      logger.debug({ phone, fieldCount: Object.keys(fields).length }, 'Loaded contact fields');
+      return fields;
+    } catch (err) {
+      if (err.code !== 'ER_NO_SUCH_TABLE') {
+        logger.error({ err, phone }, 'Error loading contact fields');
+      }
+      return {};
+    }
+  }
+
+  /**
+   * Guardar custom field del contacto
+   */
+  async saveContactField(phone, fieldName, value, fieldType = 'text') {
+    try {
+      const stringValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
+      await this.db.query(`
+        INSERT INTO contact_custom_fields (phone, field_name, field_value, field_type)
+        VALUES (?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE field_value = ?, field_type = ?, updated_at = NOW()
+      `, [phone, fieldName, stringValue, fieldType, stringValue, fieldType]);
+
+      logger.debug({ phone, fieldName, value }, 'Saved contact field');
+    } catch (err) {
+      if (err.code !== 'ER_NO_SUCH_TABLE') {
+        logger.error({ err, phone, fieldName }, 'Error saving contact field');
+      }
+    }
+  }
+
+  /**
+   * Guardar múltiples custom fields del contacto
+   */
+  async saveContactFields(phone, fields) {
+    const keysToSave = ['nombre', 'name', 'email', 'interes', 'interest', 'phone_number'];
+    for (const [key, value] of Object.entries(fields)) {
+      if (keysToSave.includes(key.toLowerCase()) && value) {
+        await this.saveContactField(phone, key, value);
+      }
+    }
+  }
+
+  /**
+   * Verificar si el contacto ya completó un flujo
+   */
+  async hasCompletedFlow(phone, flowId) {
+    try {
+      const [rows] = await this.db.query(`
+        SELECT id FROM contact_completed_flows
+        WHERE phone = ? AND flow_id = ?
+      `, [phone, flowId]);
+      return rows.length > 0;
+    } catch (err) {
+      if (err.code !== 'ER_NO_SUCH_TABLE') {
+        logger.error({ err, phone, flowId }, 'Error checking completed flow');
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Marcar flujo como completado por el contacto
+   */
+  async markFlowCompleted(phone, flowId, flowSlug) {
+    try {
+      await this.db.query(`
+        INSERT INTO contact_completed_flows (phone, flow_id, flow_slug)
+        VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE completed_at = NOW()
+      `, [phone, flowId, flowSlug]);
+      logger.debug({ phone, flowId, flowSlug }, 'Flow marked as completed');
+    } catch (err) {
+      if (err.code !== 'ER_NO_SUCH_TABLE') {
+        logger.error({ err, phone, flowId }, 'Error marking flow completed');
+      }
+    }
   }
 
   /**
