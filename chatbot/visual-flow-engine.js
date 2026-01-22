@@ -454,6 +454,53 @@ NUNCA:
       return null;
     }
 
+    // ========================================
+    // VERIFICAR SI EL USUARIO QUIERE CAMBIAR DE TEMA
+    // (solo si NO hizo clic en un botón y el mensaje es largo)
+    // ========================================
+    if (!buttonId && message.length > 10 && this.classifier) {
+      try {
+        const classification = await this.classifier.classify(message, context);
+        const detectedIntent = classification?.intent?.type;
+        const confidence = classification?.intent?.confidence || 0;
+
+        // Intents de alta prioridad que interrumpen cualquier flujo
+        const highPriorityIntents = ['complaint', 'support'];
+
+        if (highPriorityIntents.includes(detectedIntent) && confidence >= 0.6) {
+          // Verificar si el flujo actual NO es de ese intent
+          const currentFlowIntents = flow.triggerConfig?.intents || [];
+          if (!currentFlowIntents.includes(detectedIntent)) {
+            logger.info({
+              phone,
+              currentFlow: flow.name,
+              detectedIntent,
+              confidence
+            }, '🔀 Usuario cambió de tema - buscando nuevo flujo');
+
+            // Limpiar sesión actual
+            this.sessionStates.delete(phone);
+
+            // Buscar flujo que coincida con el nuevo intent
+            const newFlow = this.activeFlows.find(f => {
+              const intents = f.triggerConfig?.intents || [];
+              return intents.includes(detectedIntent);
+            });
+
+            if (newFlow) {
+              return this.startFlow(phone, newFlow, message, context);
+            } else {
+              // No hay flujo específico, usar fallback
+              return this.handleAIFallback(phone, message, context);
+            }
+          }
+        }
+      } catch (err) {
+        logger.warn({ err, phone }, 'Error checking intent during flow');
+        // Continuar con el flujo normal si hay error
+      }
+    }
+
     const currentNode = flow.nodes.find(n => n.id === sessionState.currentNodeId);
 
     if (!currentNode) {
