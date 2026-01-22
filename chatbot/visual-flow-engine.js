@@ -573,8 +573,56 @@ NUNCA:
           valueToSave = matchedOption.value || matchedOption.label;
           logger.debug({ matched: matchedOption.label, value: valueToSave }, 'Option matched');
         } else {
-          // No matcheó ninguna opción - guardar el texto tal cual
-          logger.debug({ message, optionsCount: currentNode.options.length }, 'No option matched, saving raw message');
+          // No matcheó ninguna opción - Re-preguntar amablemente
+          logger.info({ message, optionsCount: currentNode.options.length }, 'No option matched - asking again');
+
+          // Enviar mensaje de ayuda y re-enviar las opciones
+          const helpMessage = '🤔 No entendí tu respuesta. Por favor selecciona una de las opciones:';
+
+          if (this.sendMessage) {
+            await this.sendMessage(phone, helpMessage);
+          }
+
+          // Re-enviar las opciones (usando botones si es posible)
+          if (currentNode.options.length <= 3 && this.sendInteractiveButtons) {
+            try {
+              const buttons = currentNode.options.map((opt, idx) => ({
+                id: opt.value || `opt_${idx + 1}`,
+                title: opt.label
+              }));
+              const questionText = this.replaceVariables(currentNode.content || '', sessionState.variables);
+              await this.sendInteractiveButtons(phone, questionText, buttons);
+            } catch (err) {
+              // Fallback a texto
+              const optionsText = currentNode.options.map((opt, i) => `${i + 1}. ${opt.label}`).join('\n');
+              await this.sendMessage(phone, optionsText);
+            }
+          } else if (currentNode.options.length > 3 && this.sendInteractiveList) {
+            try {
+              const rows = currentNode.options.map((opt, idx) => ({
+                id: opt.value || `opt_${idx + 1}`,
+                title: opt.label,
+                description: opt.description || ''
+              }));
+              const questionText = this.replaceVariables(currentNode.content || '', sessionState.variables);
+              await this.sendInteractiveList(phone, questionText, 'Ver opciones', [{ title: 'Opciones', rows }]);
+            } catch (err) {
+              const optionsText = currentNode.options.map((opt, i) => `${i + 1}. ${opt.label}`).join('\n');
+              await this.sendMessage(phone, optionsText);
+            }
+          } else if (this.sendMessage) {
+            const optionsText = currentNode.options.map((opt, i) => `${i + 1}. ${opt.label}`).join('\n');
+            await this.sendMessage(phone, optionsText);
+          }
+
+          // NO avanzar - seguir esperando respuesta válida
+          return {
+            type: 'waiting_for_response',
+            text: 'Re-asking for valid option',
+            options: currentNode.options,
+            variable: currentNode.variable,
+            retry: true
+          };
         }
       }
 
