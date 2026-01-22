@@ -7,13 +7,26 @@ const logger = require('pino')({ level: process.env.LOG_LEVEL || 'info' });
 const OpenAI = require('openai');
 
 class VisualFlowEngine {
-  constructor(dbPool, classifier, sendMessage, emitFlowEvent = null) {
+  constructor(dbPool, classifier, sendMessage, emitFlowEvent = null, sendInteractiveButtons = null, sendInteractiveList = null) {
     this.db = dbPool;
     this.classifier = classifier;
-    this.sendMessage = sendMessage; // Función para enviar mensajes a WhatsApp
+    this.sendMessage = sendMessage; // Función para enviar mensajes de texto a WhatsApp
+    this.sendInteractiveButtons = sendInteractiveButtons; // Función para enviar botones interactivos
+    this.sendInteractiveList = sendInteractiveList; // Función para enviar listas interactivas
     this.emitFlowEvent = emitFlowEvent; // Función para emitir eventos al monitor
     this.activeFlows = [];
     this.sessionStates = new Map(); // phone -> { flowId, currentNodeId, variables }
+
+    // Keywords globales que funcionan en cualquier momento
+    this.globalKeywords = {
+      'menu': { action: 'show_menu', response: '📋 *Menú Principal*\n\n¿En qué puedo ayudarte?\n\n1️⃣ Información de productos\n2️⃣ Soporte técnico\n3️⃣ Hablar con un agente\n4️⃣ Volver al inicio' },
+      'ayuda': { action: 'show_help', response: '❓ *Ayuda*\n\nPuedes escribir:\n• *menu* - Ver opciones disponibles\n• *agente* - Hablar con una persona\n• *salir* - Terminar conversación\n\nO simplemente cuéntame qué necesitas.' },
+      'agente': { action: 'transfer', response: '👤 Entendido, te comunico con un agente humano. Por favor espera un momento...' },
+      'humano': { action: 'transfer', response: '👤 Entendido, te comunico con un agente humano. Por favor espera un momento...' },
+      'salir': { action: 'exit', response: '👋 ¡Hasta pronto! Si necesitas algo más, escríbeme.' },
+      'cancelar': { action: 'exit', response: '✅ Conversación cancelada. Escribe *menu* para ver las opciones.' },
+      'hola': { action: 'greeting', response: null } // null = dejar que el flujo maneje
+    };
 
     // Initialize OpenAI client if API key is available
     if (process.env.OPENAI_API_KEY) {
@@ -75,28 +88,162 @@ class VisualFlowEngine {
    * Procesar mensaje entrante
    * @param {string} phone - Número de teléfono
    * @param {string} message - Texto del mensaje
-   * @param {object} context - Contexto adicional (sessionId, etc.)
+   * @param {object} context - Contexto adicional (sessionId, buttonId, etc.)
    * @returns {object|null} - Respuesta del flujo o null si no hay flujo activo
    */
   async processMessage(phone, message, context = {}) {
-    // Verificar si hay una sesión activa para este teléfono
+    const normalizedMessage = message.toLowerCase().trim();
+    const buttonId = context.buttonId; // ID del botón interactivo si fue presionado
+
+    // ========================================
+    // 1. VERIFICAR KEYWORDS GLOBALES (siempre funcionan)
+    // ========================================
+    const globalKeywordResult = await this.handleGlobalKeyword(phone, normalizedMessage, context);
+    if (globalKeywordResult) {
+      // Si la keyword global devuelve algo, significa que manejó el mensaje
+      if (globalKeywordResult.handled) {
+        return globalKeywordResult;
+      }
+      // Si devuelve { continueFlow: true }, seguir con el flujo normal
+    }
+
+    // ========================================
+    // 2. VERIFICAR SI HAY SESIÓN ACTIVA
+    // ========================================
     let sessionState = this.sessionStates.get(phone);
 
     if (sessionState) {
-      // Continuar flujo existente
-      return this.continueFlow(phone, message, sessionState, context);
+      // Continuar flujo existente (pasar buttonId si existe)
+      return this.continueFlow(phone, message, sessionState, context, buttonId);
     }
 
-    // No hay sesión activa, buscar flujo que coincida
+    // ========================================
+    // 3. NO HAY SESIÓN ACTIVA - BUSCAR FLUJO QUE COINCIDA
+    // ========================================
     const matchedFlow = await this.matchFlow(message, context);
 
-    if (!matchedFlow) {
-      logger.debug({ phone }, 'No matching visual flow found');
-      return null;
+    if (matchedFlow) {
+      // Iniciar nuevo flujo
+      return this.startFlow(phone, matchedFlow, message, context);
     }
 
-    // Iniciar nuevo flujo
-    return this.startFlow(phone, matchedFlow, message, context);
+    // ========================================
+    // 4. NO HAY FLUJO - USAR FALLBACK CON IA
+    // ========================================
+    logger.debug({ phone, message: normalizedMessage.slice(0, 50) }, 'No matching visual flow - using AI fallback');
+    return this.handleAIFallback(phone, message, context);
+  }
+
+  /**
+   * Manejar keywords globales que funcionan en cualquier momento
+   */
+  async handleGlobalKeyword(phone, normalizedMessage, context) {
+    const keyword = this.globalKeywords[normalizedMessage];
+
+    if (!keyword) {
+      return null; // No es keyword global
+    }
+
+    logger.info({ phone, keyword: normalizedMessage, action: keyword.action }, '🔑 Global keyword detected');
+
+    switch (keyword.action) {
+      case 'show_menu':
+      case 'show_help':
+        // Limpiar cualquier sesión activa
+        this.sessionStates.delete(phone);
+        // Enviar respuesta
+        if (this.sendMessage && keyword.response) {
+          await this.sendMessage(phone, keyword.response);
+        }
+        return { handled: true, type: 'global_keyword', action: keyword.action };
+
+      case 'transfer':
+        // Limpiar sesión y marcar para transferencia
+        this.sessionStates.delete(phone);
+        if (this.sendMessage && keyword.response) {
+          await this.sendMessage(phone, keyword.response);
+        }
+        return {
+          handled: true,
+          type: 'transfer_to_human',
+          text: keyword.response,
+          reason: 'user_requested'
+        };
+
+      case 'exit':
+        // Limpiar sesión
+        this.sessionStates.delete(phone);
+        if (this.sendMessage && keyword.response) {
+          await this.sendMessage(phone, keyword.response);
+        }
+        return { handled: true, type: 'session_ended', action: keyword.action };
+
+      case 'greeting':
+        // Permitir que el flujo de saludo maneje esto
+        return { continueFlow: true };
+
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Fallback con IA cuando no hay flujo que coincida
+   */
+  async handleAIFallback(phone, message, context) {
+    if (!this.openai) {
+      logger.warn({ phone }, 'AI fallback not available - no OpenAI key');
+      return null; // Dejar que el chatbot.js maneje el fallback estándar
+    }
+
+    try {
+      // Cargar datos del usuario para personalizar
+      const savedFields = await this.loadContactFields(phone);
+      const userName = savedFields.nombre || savedFields.name || '';
+
+      const systemPrompt = `Eres un asistente virtual amable y profesional de Respaldos Chile.
+Tu rol es ayudar a los clientes con consultas generales.
+
+REGLAS:
+- Responde de forma concisa (máximo 3 líneas)
+- Sé amable pero profesional
+- Si no puedes ayudar con algo específico, sugiere escribir "agente" para hablar con una persona
+- Puedes sugerir escribir "menu" para ver las opciones disponibles
+${userName ? `- El usuario se llama ${userName}, úsalo ocasionalmente para personalizar` : ''}
+
+NUNCA:
+- Inventes información sobre productos o precios
+- Prometas cosas que no puedes cumplir
+- Des información técnica detallada (sugiere hablar con un agente)`;
+
+      const aiResponse = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: message }
+        ],
+        temperature: 0.7,
+        max_tokens: 150
+      });
+
+      const responseText = aiResponse.choices[0]?.message?.content || 'Gracias por tu mensaje. ¿En qué puedo ayudarte?';
+
+      if (this.sendMessage) {
+        await this.sendMessage(phone, responseText);
+      }
+
+      logger.info({ phone, response: responseText.slice(0, 50) }, '🤖 AI fallback response sent');
+
+      return {
+        type: 'ai_fallback',
+        text: responseText,
+        handled: true
+      };
+
+    } catch (err) {
+      logger.error({ err, phone }, 'Error in AI fallback');
+      return null; // Dejar que chatbot.js maneje el fallback estándar
+    }
   }
 
   /**
@@ -298,7 +445,7 @@ class VisualFlowEngine {
   /**
    * Continuar un flujo existente
    */
-  async continueFlow(phone, message, sessionState, context) {
+  async continueFlow(phone, message, sessionState, context, buttonId = null) {
     const flow = this.activeFlows.find(f => f.id === sessionState.flowId);
 
     if (!flow) {
@@ -322,32 +469,65 @@ class VisualFlowEngine {
       // Si hay opciones, intentar matchear
       if (currentNode.options && currentNode.options.length > 0) {
         let matchedOption = null;
+        const messageLower = message.toLowerCase().trim();
 
-        // 1. Buscar por número (1, 2, 3...)
-        const numericInput = parseInt(message.trim(), 10);
-        if (!isNaN(numericInput) && numericInput >= 1 && numericInput <= currentNode.options.length) {
-          matchedOption = currentNode.options[numericInput - 1];
-          logger.debug({ numericInput, matchedOption: matchedOption?.label }, 'Matched option by number');
+        // 0. PRIORITARIO: Si hay buttonId (clic en botón interactivo), buscar por ese ID
+        if (buttonId) {
+          matchedOption = currentNode.options.find(
+            (opt, idx) => opt.value === buttonId || `opt_${idx + 1}` === buttonId
+          );
+          if (matchedOption) {
+            logger.debug({ buttonId, matchedOption: matchedOption.label }, 'Matched option by buttonId (interactive button click)');
+          }
         }
 
-        // 2. Si no matcheó por número, buscar por label o value
+        // 1. Buscar por ID exacto en el mensaje (fallback para texto que coincide con value)
         if (!matchedOption) {
           matchedOption = currentNode.options.find(
-            opt => opt.label.toLowerCase() === message.toLowerCase() ||
-                   opt.value?.toLowerCase() === message.toLowerCase()
+            (opt, idx) => opt.value === message || opt.value === messageLower ||
+                   `opt_${idx + 1}` === messageLower
           );
+          if (matchedOption) {
+            logger.debug({ matchedById: matchedOption.label }, 'Matched option by value/ID in message');
+          }
         }
 
-        // 3. Si aún no matcheó, buscar si el mensaje contiene el label
+        // 2. Buscar por número (1, 2, 3...)
+        if (!matchedOption) {
+          const numericInput = parseInt(message.trim(), 10);
+          if (!isNaN(numericInput) && numericInput >= 1 && numericInput <= currentNode.options.length) {
+            matchedOption = currentNode.options[numericInput - 1];
+            logger.debug({ numericInput, matchedOption: matchedOption?.label }, 'Matched option by number');
+          }
+        }
+
+        // 3. Buscar por label exacto o value exacto
         if (!matchedOption) {
           matchedOption = currentNode.options.find(
-            opt => message.toLowerCase().includes(opt.label.toLowerCase())
+            opt => opt.label.toLowerCase() === messageLower ||
+                   opt.value?.toLowerCase() === messageLower
           );
+          if (matchedOption) {
+            logger.debug({ matchedByLabel: matchedOption.label }, 'Matched option by label/value');
+          }
+        }
+
+        // 4. Buscar si el mensaje contiene el label
+        if (!matchedOption) {
+          matchedOption = currentNode.options.find(
+            opt => messageLower.includes(opt.label.toLowerCase())
+          );
+          if (matchedOption) {
+            logger.debug({ matchedByContains: matchedOption.label }, 'Matched option by contains');
+          }
         }
 
         if (matchedOption) {
-          valueToSave = matchedOption.value;
+          valueToSave = matchedOption.value || matchedOption.label;
           logger.debug({ matched: matchedOption.label, value: valueToSave }, 'Option matched');
+        } else {
+          // No matcheó ninguna opción - guardar el texto tal cual
+          logger.debug({ message, optionsCount: currentNode.options.length }, 'No option matched, saving raw message');
         }
       }
 
@@ -455,16 +635,65 @@ class VisualFlowEngine {
       case 'question':
         const questionText = this.replaceVariables(node.content || '', sessionState.variables);
 
-        // Enviar pregunta
-        if (this.sendMessage) {
-          await this.sendMessage(phone, questionText);
-
-          // Si hay opciones, enviar como lista o botones
-          if (node.options && node.options.length > 0) {
+        // Enviar pregunta con opciones
+        if (node.options && node.options.length > 0) {
+          // Usar botones interactivos si hay 3 o menos opciones
+          if (node.options.length <= 3 && this.sendInteractiveButtons) {
+            try {
+              const buttons = node.options.map((opt, idx) => ({
+                id: opt.value || `opt_${idx + 1}`,
+                title: opt.label
+              }));
+              await this.sendInteractiveButtons(phone, questionText, buttons);
+              logger.debug({ phone, buttons: buttons.length }, 'Sent interactive buttons');
+            } catch (err) {
+              logger.warn({ err, phone }, 'Failed to send interactive buttons, falling back to text');
+              // Fallback a texto si falla
+              if (this.sendMessage) {
+                await this.sendMessage(phone, questionText);
+                const optionsText = node.options.map((opt, i) => `${i + 1}. ${opt.label}`).join('\n');
+                await this.sendMessage(phone, optionsText);
+              }
+            }
+          }
+          // Usar lista interactiva si hay más de 3 opciones
+          else if (node.options.length > 3 && this.sendInteractiveList) {
+            try {
+              const rows = node.options.map((opt, idx) => ({
+                id: opt.value || `opt_${idx + 1}`,
+                title: opt.label,
+                description: opt.description || ''
+              }));
+              await this.sendInteractiveList(
+                phone,
+                questionText,
+                'Ver opciones',
+                [{ title: 'Opciones', rows }]
+              );
+              logger.debug({ phone, options: rows.length }, 'Sent interactive list');
+            } catch (err) {
+              logger.warn({ err, phone }, 'Failed to send interactive list, falling back to text');
+              // Fallback a texto si falla
+              if (this.sendMessage) {
+                await this.sendMessage(phone, questionText);
+                const optionsText = node.options.map((opt, i) => `${i + 1}. ${opt.label}`).join('\n');
+                await this.sendMessage(phone, optionsText);
+              }
+            }
+          }
+          // Fallback: enviar como texto simple
+          else if (this.sendMessage) {
+            await this.sendMessage(phone, questionText);
             const optionsText = node.options.map((opt, i) => `${i + 1}. ${opt.label}`).join('\n');
             await this.sendMessage(phone, optionsText);
           }
+        } else {
+          // Pregunta sin opciones - solo texto
+          if (this.sendMessage) {
+            await this.sendMessage(phone, questionText);
+          }
         }
+
         await logStep(`Question: ${questionText} (waiting for: ${node.variable})`);
 
         // Esperar respuesta (no continuar)

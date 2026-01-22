@@ -4,9 +4,9 @@
  */
 
 const express = require('express');
-const router = express.Router();
 
 module.exports = function(db, reloadFlowsFn = null) {
+  const router = express.Router();
 
   // ============================================
   // CRUD DE FLUJOS
@@ -275,11 +275,24 @@ module.exports = function(db, reloadFlowsFn = null) {
         is_default || false
       ]);
 
+      // Recargar si el flujo se creó activo
+      let reloaded = false;
+      if (is_active && reloadFlowsFn) {
+        try {
+          await reloadFlowsFn();
+          reloaded = true;
+          console.log(`🔄 Flujos recargados después de crear flow activo ${flowSlug}`);
+        } catch (e) {
+          console.error('Error reloading flows after create:', e);
+        }
+      }
+
       res.status(201).json({
         success: true,
         message: 'Flow created',
         id: result.insertId,
-        slug: flowSlug
+        slug: flowSlug,
+        reloaded
       });
     } catch (err) {
       console.error('Error creating flow:', err);
@@ -349,7 +362,19 @@ module.exports = function(db, reloadFlowsFn = null) {
         params
       );
 
-      res.json({ success: true, message: 'Flow updated' });
+      // Recargar flujos si se modificó un flujo activo o se cambió is_active
+      let reloaded = false;
+      if (reloadFlowsFn) {
+        try {
+          await reloadFlowsFn();
+          reloaded = true;
+          console.log(`🔄 Flujos recargados después de actualizar flow ${identifier}`);
+        } catch (e) {
+          console.error('Error reloading flows after update:', e);
+        }
+      }
+
+      res.json({ success: true, reloaded, message: 'Flow updated' });
     } catch (err) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -372,7 +397,19 @@ module.exports = function(db, reloadFlowsFn = null) {
         return res.status(404).json({ success: false, error: 'Flow not found' });
       }
 
-      res.json({ success: true, message: 'Flow deleted' });
+      // Recargar para eliminar el flujo de memoria
+      let reloaded = false;
+      if (reloadFlowsFn) {
+        try {
+          await reloadFlowsFn();
+          reloaded = true;
+          console.log(`🔄 Flujos recargados después de eliminar flow ${identifier}`);
+        } catch (e) {
+          console.error('Error reloading flows after delete:', e);
+        }
+      }
+
+      res.json({ success: true, reloaded, message: 'Flow deleted' });
     } catch (err) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -402,12 +439,22 @@ module.exports = function(db, reloadFlowsFn = null) {
       }
 
       // Recargar flujos en el motor si está disponible
+      let reloaded = false;
       if (reloadFlowsFn) {
-        await reloadFlowsFn().catch(e => console.error('Error reloading flows:', e));
+        try {
+          await reloadFlowsFn();
+          reloaded = true;
+          console.log(`🔄 Flujos recargados después de ${active ? 'activar' : 'desactivar'} flow ${identifier}`);
+        } catch (e) {
+          console.error('Error reloading flows:', e);
+        }
+      } else {
+        console.warn('⚠️ reloadFlowsFn no está disponible - los flujos NO se recargaron');
       }
 
       res.json({
         success: true,
+        reloaded,
         message: active ? 'Flow activated' : 'Flow deactivated'
       });
     } catch (err) {

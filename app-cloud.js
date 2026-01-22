@@ -928,6 +928,132 @@ async function sendTemplateViaCloudAPI(toE164, templateName, languageCode, compo
   return json.messages?.[0]?.id || null;
 }
 
+/**
+ * Enviar mensaje con botones interactivos de WhatsApp
+ * @param {string} toE164 - Número de teléfono
+ * @param {string} bodyText - Texto principal del mensaje
+ * @param {Array} buttons - Array de botones [{id, title}] (máximo 3)
+ * @param {string} headerText - Texto opcional del header
+ * @param {string} footerText - Texto opcional del footer
+ */
+async function sendInteractiveButtons(toE164, bodyText, buttons, headerText = null, footerText = null) {
+  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${WABA_PHONE_NUMBER_ID}/messages`;
+
+  // WhatsApp permite máximo 3 botones
+  const validButtons = buttons.slice(0, 3).map((btn, idx) => ({
+    type: 'reply',
+    reply: {
+      id: btn.id || `btn_${idx + 1}`,
+      title: (btn.title || btn.label || `Opción ${idx + 1}`).slice(0, 20) // Máx 20 chars
+    }
+  }));
+
+  const interactive = {
+    type: 'button',
+    body: { text: bodyText.slice(0, 1024) }, // Máx 1024 chars
+    action: { buttons: validButtons }
+  };
+
+  // Header opcional (texto)
+  if (headerText) {
+    interactive.header = { type: 'text', text: headerText.slice(0, 60) }; // Máx 60 chars
+  }
+
+  // Footer opcional
+  if (footerText) {
+    interactive.footer = { text: footerText.slice(0, 60) }; // Máx 60 chars
+  }
+
+  const payload = {
+    messaging_product: 'whatsapp',
+    to: toE164,
+    type: 'interactive',
+    interactive
+  };
+
+  logger.debug({ url, toE164, buttons: validButtons.length }, 'Sending interactive buttons');
+
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${META_ACCESS_TOKEN}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const json = await r.json();
+  if (!r.ok) {
+    logger.error({ error: json?.error, payload }, 'Error sending interactive buttons');
+    throw new Error(json?.error?.message || 'Meta API error on send interactive buttons');
+  }
+  return json.messages?.[0]?.id || null;
+}
+
+/**
+ * Enviar mensaje con lista interactiva de WhatsApp
+ * @param {string} toE164 - Número de teléfono
+ * @param {string} bodyText - Texto principal del mensaje
+ * @param {string} buttonText - Texto del botón que abre la lista (máx 20 chars)
+ * @param {Array} sections - Secciones con opciones [{title, rows: [{id, title, description}]}]
+ * @param {string} headerText - Texto opcional del header
+ * @param {string} footerText - Texto opcional del footer
+ */
+async function sendInteractiveList(toE164, bodyText, buttonText, sections, headerText = null, footerText = null) {
+  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${WABA_PHONE_NUMBER_ID}/messages`;
+
+  // Formatear secciones
+  const validSections = sections.map(section => ({
+    title: (section.title || 'Opciones').slice(0, 24), // Máx 24 chars
+    rows: section.rows.slice(0, 10).map((row, idx) => ({
+      id: row.id || `row_${idx + 1}`,
+      title: (row.title || row.label || `Opción ${idx + 1}`).slice(0, 24), // Máx 24 chars
+      description: row.description ? row.description.slice(0, 72) : undefined // Máx 72 chars
+    }))
+  }));
+
+  const interactive = {
+    type: 'list',
+    body: { text: bodyText.slice(0, 1024) },
+    action: {
+      button: buttonText.slice(0, 20), // Texto del botón que abre la lista
+      sections: validSections
+    }
+  };
+
+  if (headerText) {
+    interactive.header = { type: 'text', text: headerText.slice(0, 60) };
+  }
+
+  if (footerText) {
+    interactive.footer = { text: footerText.slice(0, 60) };
+  }
+
+  const payload = {
+    messaging_product: 'whatsapp',
+    to: toE164,
+    type: 'interactive',
+    interactive
+  };
+
+  logger.debug({ url, toE164, sectionsCount: validSections.length }, 'Sending interactive list');
+
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${META_ACCESS_TOKEN}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const json = await r.json();
+  if (!r.ok) {
+    logger.error({ error: json?.error, payload }, 'Error sending interactive list');
+    throw new Error(json?.error?.message || 'Meta API error on send interactive list');
+  }
+  return json.messages?.[0]?.id || null;
+}
 
 
 // Webhook (Meta) — debe ir antes del parser JSON global
@@ -4434,6 +4560,8 @@ const { registerRoutes, handleChatbotMessage, setSessionMode, reloadVisualFlows 
   logger,
   ssePush,
   sendTextViaCloudAPI,
+  sendInteractiveButtons,
+  sendInteractiveList,
   emitFlowEvent: flowMonitorRoutes.emitFlowEvent
 });
 registerRoutes(app, panelAuth);

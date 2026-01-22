@@ -10,7 +10,7 @@
 const VisualFlowEngine = require('./visual-flow-engine');
 const MessageClassifier = require('./message-classifier');
 
-function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, emitFlowEvent }) {
+function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInteractiveButtons, sendInteractiveList, emitFlowEvent }) {
   // Configuración
   const CHATBOT_MODE_DEFAULT = process.env.CHATBOT_MODE_DEFAULT || 'automatic';
   const CHATBOT_AUTO_REPLY_DELAY = Number(process.env.CHATBOT_AUTO_REPLY_DELAY || 1000);
@@ -20,7 +20,14 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, emitFlowEve
 
   // Initialize Visual Flow Engine y MessageClassifier
   const messageClassifier = new MessageClassifier(pool);
-  const visualFlowEngine = new VisualFlowEngine(pool, messageClassifier, sendTextViaCloudAPI, emitFlowEvent);
+  const visualFlowEngine = new VisualFlowEngine(
+    pool,
+    messageClassifier,
+    sendTextViaCloudAPI,
+    emitFlowEvent,
+    sendInteractiveButtons,
+    sendInteractiveList
+  );
 
   // Cargar flujos activos al inicio
   visualFlowEngine.loadActiveFlows().catch(e => {
@@ -83,12 +90,13 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, emitFlowEve
       // ========================================
       // MODO ASSISTED/AUTOMATIC: Usar Visual Flow Engine
       // ========================================
-      logger.info({ sessionId, mode, phone }, '🤖 Procesando con Visual Flow Engine...');
+      logger.info({ sessionId, mode, phone, buttonId }, '🤖 Procesando con Visual Flow Engine...');
 
       try {
         const flowResult = await visualFlowEngine.processMessage(phone, normalized, {
           sessionId,
-          phone
+          phone,
+          buttonId // ID del botón interactivo si el usuario presionó uno
         });
 
         if (flowResult) {
@@ -107,7 +115,10 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, emitFlowEve
               ssePush(sessionId, {
                 type: 'visual_flow_transfer',
                 variables: flowResult.variables,
-                message: 'Cliente transferido por flujo visual'
+                reason: flowResult.reason || 'flow_triggered',
+                message: flowResult.reason === 'user_requested'
+                  ? 'Cliente solicitó hablar con agente'
+                  : 'Cliente transferido por flujo visual'
               });
               // Cambiar a modo manual
               sessionModes.set(sessionIdNum, 'manual');
@@ -120,6 +131,36 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, emitFlowEve
               ssePush(sessionId, {
                 type: 'visual_flow_completed',
                 message: 'Flujo visual completado'
+              });
+              return;
+
+            case 'global_keyword':
+              ssePush(sessionId, {
+                type: 'global_keyword_triggered',
+                action: flowResult.action,
+                message: `Keyword global activada: ${flowResult.action}`
+              });
+              return;
+
+            case 'session_ended':
+              ssePush(sessionId, {
+                type: 'session_ended',
+                message: 'Usuario terminó la conversación'
+              });
+              return;
+
+            case 'ai_fallback':
+              ssePush(sessionId, {
+                type: 'ai_fallback_response',
+                message: 'Respuesta generada por IA (sin flujo coincidente)'
+              });
+              return;
+
+            case 'personalized_greeting':
+              ssePush(sessionId, {
+                type: 'personalized_greeting',
+                user: flowResult.user,
+                message: `Saludo personalizado para ${flowResult.user}`
               });
               return;
 
