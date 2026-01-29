@@ -75,8 +75,8 @@ const migrations = [
     description: 'Insertar departamentos por defecto',
     sql: `
       INSERT IGNORE INTO departments (name, display_name, icon, color, auto_assign_intents) VALUES
-      ('ventas', 'Ventas', 'ShoppingCart', '#28a745', '["ventas","comprar","precio","cotizar","producto"]'),
-      ('soporte', 'Soporte', 'Wrench', '#17a2b8', '["soporte","problema","error","ayuda","falla"]'),
+      ('ventas', 'Ventas', 'ShoppingCart', '#28a745', '["sales","ventas","comprar","precio","cotizar","producto"]'),
+      ('soporte', 'Soporte', 'Wrench', '#17a2b8', '["support","complaint","soporte","problema","error","ayuda","falla"]'),
       ('postventa', 'Post-venta', 'Package', '#ffc107', '["postventa","devolucion","cambio","garantia","entrega","reclamo"]'),
       ('general', 'General', 'MessageSquare', '#6f42c1', '[]')
     `
@@ -136,6 +136,29 @@ const migrations = [
     name: 'create_index_assigned_dept',
     description: 'Crear índice assigned_dept en chat_sessions',
     sql: `CREATE INDEX idx_assigned_dept ON chat_sessions(assigned_department_id)`
+  },
+  {
+    name: 'update_dept_ventas_add_sales_intent',
+    description: 'Agregar intent "sales" al departamento Ventas',
+    sql: `UPDATE departments SET auto_assign_intents = '["sales","ventas","comprar","precio","cotizar","producto"]'
+          WHERE name = 'ventas' AND (auto_assign_intents IS NULL OR NOT JSON_CONTAINS(auto_assign_intents, '"sales"'))`
+  },
+  {
+    name: 'update_dept_soporte_add_support_intent',
+    description: 'Agregar intents "support","complaint" al departamento Soporte',
+    sql: `UPDATE departments SET auto_assign_intents = '["support","complaint","soporte","problema","error","ayuda","falla"]'
+          WHERE name = 'soporte' AND (auto_assign_intents IS NULL OR NOT JSON_CONTAINS(auto_assign_intents, '"support"'))`
+  },
+  {
+    name: 'update_sales_flow_add_transfer',
+    description: 'Actualizar flujo de ventas: transferir a agente humano en vez de capturar lead',
+    sql: `UPDATE visual_flows SET
+            description = 'Detecta intención de compra y transfiere a agente de ventas',
+            nodes = '[{"id":"trigger","type":"trigger","content":"Cuando intención = ventas"},{"id":"welcome","type":"message","content":"¡Entendido! Te conecto con un asesor de ventas que te ayudará personalmente."},{"id":"transfer","type":"transfer","content":"Un momento, estoy transfiriendo tu consulta a nuestro equipo de ventas..."}]',
+            connections = '[{"from":"trigger","to":"welcome"},{"from":"welcome","to":"transfer"}]',
+            variables = '{}',
+            updated_at = NOW()
+          WHERE slug = 'embudo-ventas'`
   }
 ];
 

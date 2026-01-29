@@ -260,39 +260,20 @@ INSERT INTO visual_flows (slug, name, description, trigger_config, nodes, connec
  '{"issue_type": "", "issue_details": ""}',
  TRUE);
 
--- Flujo: Embudo de Ventas
+-- Flujo: Embudo de Ventas (transfer rápido a agente humano)
 INSERT INTO visual_flows (slug, name, description, trigger_config, nodes, connections, variables, is_active) VALUES
-('embudo-ventas', 'Embudo de Ventas', 'Flujo para consultas de ventas y productos',
+('embudo-ventas', 'Embudo de Ventas', 'Detecta intención de compra y transfiere a agente de ventas',
  '{"type": "intent", "intents": ["sales"], "confidence_threshold": 0.5}',
  '[
    {"id": "trigger", "type": "trigger", "content": "Cuando intención = ventas"},
-   {"id": "welcome", "type": "message", "content": "¡Gracias por tu interés! Estoy aquí para ayudarte con tu compra."},
-   {"id": "product", "type": "question", "content": "¿Qué tipo de producto te interesa?", "variable": "product_interest", "options": [
-     {"label": "Respaldos de datos", "value": "backup"},
-     {"label": "Servicios cloud", "value": "cloud"},
-     {"label": "Consultoría", "value": "consulting"},
-     {"label": "Otro", "value": "other"}
-   ]},
-   {"id": "budget", "type": "question", "content": "¿Cuál es tu presupuesto aproximado?", "variable": "budget", "options": [
-     {"label": "Menos de $50.000", "value": "low"},
-     {"label": "$50.000 - $100.000", "value": "medium"},
-     {"label": "Más de $100.000", "value": "high"}
-   ]},
-   {"id": "contact", "type": "question", "content": "¿Cuál es tu email para enviarte más información?", "variable": "email"},
-   {"id": "save", "type": "action", "action": "save_lead", "payload": {"product": "{{product_interest}}", "budget": "{{budget}}", "email": "{{email}}"}},
-   {"id": "thanks", "type": "message", "content": "¡Perfecto! Un asesor te contactará pronto a {{email}} con más información sobre {{product_interest}}."},
-   {"id": "end", "type": "end"}
+   {"id": "welcome", "type": "message", "content": "¡Entendido! Te conecto con un asesor de ventas que te ayudará personalmente."},
+   {"id": "transfer", "type": "transfer", "content": "Un momento, estoy transfiriendo tu consulta a nuestro equipo de ventas..."}
  ]',
  '[
    {"from": "trigger", "to": "welcome"},
-   {"from": "welcome", "to": "product"},
-   {"from": "product", "to": "budget"},
-   {"from": "budget", "to": "contact"},
-   {"from": "contact", "to": "save"},
-   {"from": "save", "to": "thanks"},
-   {"from": "thanks", "to": "end"}
+   {"from": "welcome", "to": "transfer"}
  ]',
- '{"product_interest": "", "budget": "", "email": ""}',
+ '{}',
  TRUE);
 
 -- ============================================

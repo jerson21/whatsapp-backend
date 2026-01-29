@@ -465,7 +465,7 @@ NUNCA:
         const confidence = classification?.intent?.confidence || 0;
 
         // Intents de alta prioridad que interrumpen cualquier flujo
-        const highPriorityIntents = ['complaint', 'support'];
+        const highPriorityIntents = ['complaint', 'support', 'sales'];
 
         if (highPriorityIntents.includes(detectedIntent) && confidence >= 0.6) {
           // Verificar si el flujo actual NO es de ese intent
@@ -904,11 +904,14 @@ NUNCA:
         await this.updateLogVariables(sessionState.executionLogId, sessionState.variables);
         await this.completeExecutionLog(sessionState.executionLogId, 'transferred', node.id, 'transfer');
         this.sessionStates.delete(phone);
+        // Extraer intent del trigger del flujo para auto-asignación de departamento
+        const flowIntent = flow.triggerConfig?.intents?.[0] || null;
         return {
           type: 'transfer_to_human',
           text: transferText,
           variables: sessionState.variables,
-          targetDepartmentId: node.targetDepartmentId || node.departmentId || null
+          targetDepartmentId: node.targetDepartmentId || node.departmentId || null,
+          flowIntent
         };
 
       case 'end':

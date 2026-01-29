@@ -146,9 +146,10 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
                     // Flow especificó departamento → asignar ese + agente
                     await autoAssignDepartment(sessionId, null, flowResult.targetDepartmentId);
                   } else {
-                    // Buscar departamento por intent + agente
-                    const [[sess]] = await pool.query('SELECT last_intent FROM chat_sessions WHERE id=?', [sessionId]);
-                    await autoAssignDepartment(sessionId, sess?.last_intent || 'general');
+                    // Usar intent del flujo que disparó el transfer, o fallback a 'general'
+                    const intent = flowResult.flowIntent || 'general';
+                    logger.info({ sessionId, intent }, 'Auto-asignando departamento por intent del flujo');
+                    await autoAssignDepartment(sessionId, intent);
                   }
                 }
               } catch (e) {
