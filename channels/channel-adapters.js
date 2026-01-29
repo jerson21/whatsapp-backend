@@ -143,13 +143,15 @@ class ChannelAdapters {
    */
   async sendInstagramMessage(userId, text, options = {}) {
     const { accessToken, pageId } = this.config.instagram;
+    // Para Instagram se necesita el Page Access Token
+    const pageAccessToken = process.env.INSTAGRAM_PAGE_ACCESS_TOKEN || accessToken;
 
-    if (!accessToken || !pageId) {
+    if (!pageAccessToken || !pageId) {
       this.logger.warn('Instagram credentials not configured - skipping send');
       return `ig_simulated_${Date.now()}`;
     }
 
-    const url = `https://graph.facebook.com/v22.0/me/messages`;
+    const url = `https://graph.facebook.com/v22.0/${pageId}/messages`;
 
     const payload = {
       recipient: { id: userId },
@@ -169,7 +171,7 @@ class ChannelAdapters {
       const response = await fetch(url, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
+          'Authorization': `Bearer ${pageAccessToken}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)
