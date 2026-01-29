@@ -4055,6 +4055,27 @@ app.post('/api/chat/mark-read', async (req, res) => {
   }
 });
 
+// Eliminar una conversación completa (sesión + mensajes via CASCADE)
+app.delete('/api/chat/conversations/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const agentRole = req.agent?.role;
+    if (agentRole !== 'supervisor') {
+      return res.status(403).json({ ok: false, error: 'Solo supervisores pueden eliminar conversaciones' });
+    }
+    const [[session]] = await pool.query('SELECT id, phone FROM chat_sessions WHERE id=?', [sessionId]);
+    if (!session) {
+      return res.status(404).json({ ok: false, error: 'Conversación no encontrada' });
+    }
+    await pool.query('DELETE FROM chat_sessions WHERE id=?', [session.id]);
+    logger.info({ sessionId: session.id, phone: session.phone, deletedBy: req.agent?.username }, 'Conversación eliminada');
+    res.json({ ok: true, deleted: { sessionId: session.id, phone: session.phone } });
+  } catch (e) {
+    logger.error({ e }, 'DELETE /api/chat/conversations/:sessionId error');
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // Obtener información de una conversación específica por número de teléfono
 app.get('/api/chat/conversations/:phone', async (req, res) => {
   try {
