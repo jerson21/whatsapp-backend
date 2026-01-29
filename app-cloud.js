@@ -3811,26 +3811,31 @@ app.get('/api/chat/conversations', async (req, res) => {
     let whereExtra = '';
     const params = [];
 
-    if (filter === 'mine' && agentId) {
+    if (filter === 'mine' && agentId > 0) {
+      // Agente real: solo sus chats asignados
       whereExtra = ' AND s.assigned_agent_id = ?';
       params.push(agentId);
+    } else if (filter === 'mine' && agentRole === 'supervisor') {
+      // Admin/supervisor legacy (id=0): ver todo
+      // no agrega filtro
     } else if (filter === 'department') {
       const deptId = departmentId || agentDeptId;
       if (deptId) {
         whereExtra = ' AND s.assigned_department_id = ?';
         params.push(deptId);
       }
+      // Si no hay deptId (admin legacy), no filtra → ve todo
     } else if (filter === 'unassigned') {
       whereExtra = ' AND s.assigned_agent_id IS NULL';
     } else if (filter === 'all') {
-      // supervisor ve todo, agente ve su depto + propios
-      if (agentRole !== 'supervisor' && agentId) {
+      // supervisor ve todo, agente normal ve su depto + propios
+      if (agentRole !== 'supervisor' && agentId > 0) {
         whereExtra = ' AND (s.assigned_agent_id = ? OR s.assigned_department_id = ?)';
         params.push(agentId, agentDeptId || 0);
       }
     }
     // sin filter: supervisor ve todo, agente ve lo accesible
-    if (!filter && agentRole !== 'supervisor' && agentId) {
+    if (!filter && agentRole !== 'supervisor' && agentId > 0) {
       whereExtra = ' AND (s.assigned_agent_id = ? OR s.assigned_department_id = ? OR s.assigned_agent_id IS NULL)';
       params.push(agentId, agentDeptId || 0);
     }
