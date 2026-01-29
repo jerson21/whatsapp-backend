@@ -1776,9 +1776,11 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             } else {
               const token = randomToken(24);
               const baseEnable = CHATBOT_AUTO_ENABLE_NEW_SESSIONS || chatbotGlobalEnabled;
-              // En modo prueba, solo habilitar bot para teléfonos de prueba
-              const enableForNew = (chatbotTestPhones.size > 0)
-                ? (baseEnable && chatbotTestPhones.has(from))
+              // En modo prueba: habilitar bot para teléfonos de prueba (aunque global esté off)
+              // En modo normal: usar configuración global
+              const isTestMode = chatbotTestPhones.size > 0;
+              const enableForNew = isTestMode
+                ? chatbotTestPhones.has(from)  // Test mode: bot ON solo para test phones
                 : baseEnable;
 
               // 🐛 DEBUG LOG TEMPORAL para nueva sesión
@@ -1962,7 +1964,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             const isTestMode = chatbotTestPhones.size > 0;
             const isTestPhone = isTestMode && chatbotTestPhones.has(from);
             const botEnabledForThis = isTestMode
-              ? isTestPhone && (chatbotGlobalEnabled || sessionChatbotEnabled)
+              ? isTestPhone  // Test mode: bot siempre activo para test phones (aunque global esté off)
               : (chatbotGlobalEnabled || sessionChatbotEnabled);
             const shouldRunBot = Boolean(
               (textForDB || interactiveId) && botEnabledForThis && (!handledByOrchestrator || ORCH_BOOT_MODE === 'tee')
@@ -4087,6 +4089,10 @@ app.delete('/api/chat/conversations/:sessionId', async (req, res) => {
       return res.status(404).json({ ok: false, error: 'Conversación no encontrada' });
     }
     await pool.query('DELETE FROM chat_sessions WHERE id=?', [session.id]);
+    // Limpiar estado en memoria del chatbot (sessionModes + visualFlowEngine.sessionStates)
+    if (typeof clearSessionState === 'function') {
+      clearSessionState(session.id, session.phone);
+    }
     logger.info({ sessionId: session.id, phone: session.phone, deletedBy: req.agent?.username }, 'Conversación eliminada');
     res.json({ ok: true, deleted: { sessionId: session.id, phone: session.phone } });
   } catch (e) {
@@ -5476,7 +5482,7 @@ app.post('/api/chat/reset-escalation', express.json(), async (req, res) => {
 });
 
 /* ========= Start Server ========= */
-const { registerRoutes, handleChatbotMessage, setSessionMode, reloadVisualFlows } = createChatbot({
+const { registerRoutes, handleChatbotMessage, setSessionMode, clearSessionState, reloadVisualFlows } = createChatbot({
   pool,
   logger,
   ssePush,

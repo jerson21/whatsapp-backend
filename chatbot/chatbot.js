@@ -413,6 +413,15 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
   }
 
   /**
+   * Limpiar estado en memoria al eliminar una conversación
+   */
+  function clearSessionState(sessionId, phone) {
+    if (sessionId) sessionModes.delete(Number(sessionId));
+    if (phone) visualFlowEngine.clearSession(phone);
+    logger.info({ sessionId, phone }, '🧹 Estado de sesión limpiado (memoria)');
+  }
+
+  /**
    * Obtener motor de flujos para uso externo
    */
   function getVisualFlowEngine() {
@@ -430,6 +439,7 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
     registerRoutes,
     handleChatbotMessage,
     setSessionMode,
+    clearSessionState,
     reloadVisualFlows,
     getVisualFlowEngine,
     getMessageClassifier
