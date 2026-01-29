@@ -1746,7 +1746,14 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         // Instagram y Messenger usan entry.messaging[]
         const messagingEvents = Array.isArray(entry.messaging) ? entry.messaging : [];
         // Filtrar solo eventos que tienen message (no read receipts ni otros)
-        messages = messagingEvents.filter(evt => evt.message || evt.postback);
+        // IMPORTANTE: Excluir echo messages (mensajes enviados por nuestra página)
+        messages = messagingEvents.filter(evt => {
+          if (evt.message?.is_echo) {
+            logger.debug({ mid: evt.message.mid }, '🔄 Ignorando echo message de Instagram/Messenger');
+            return false;
+          }
+          return evt.message || evt.postback;
+        });
         // Instagram/Messenger no envían statuses en el mismo formato
       } else {
         // WhatsApp usa entry.changes[].value.messages[]
@@ -2626,11 +2633,19 @@ app.post('/api/chat/send', sendLimiter, async (req, res) => {
 
     // Soporte para nuevo formato del frontend: { to, message }
     if (!sessionId && to) {
-      const normalizedPhone = normalizePhoneCL(to);
-      const [sessionRows] = await pool.query(
+      // Primero buscar exacto (Instagram/Messenger usan IDs, no teléfonos)
+      let [sessionRows] = await pool.query(
         `SELECT id, token FROM chat_sessions WHERE phone=? AND status='OPEN' ORDER BY id DESC LIMIT 1`,
-        [normalizedPhone]
+        [String(to)]
       );
+      // Si no encontró, intentar con normalización chilena (WhatsApp)
+      if (!sessionRows.length) {
+        const normalizedPhone = normalizePhoneCL(to);
+        [sessionRows] = await pool.query(
+          `SELECT id, token FROM chat_sessions WHERE phone=? AND status='OPEN' ORDER BY id DESC LIMIT 1`,
+          [normalizedPhone]
+        );
+      }
 
       if (!sessionRows.length) {
         return res.status(404).json({ ok: false, error: 'Conversación no encontrada' });
