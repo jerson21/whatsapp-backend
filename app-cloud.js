@@ -1722,13 +1722,29 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     if (!entries.length) return res.sendStatus(200);
 
     for (const entry of entries) {
-      const changes = Array.isArray(entry.changes) ? entry.changes : [];
-      for (const change of changes) {
-        const value = change?.value || {};
-        const messages = value.messages || [];
-        const statuses = value.statuses || [];
+      // 🌐 MULTICANAL: Extraer mensajes según la estructura del canal
+      let messages = [];
+      let statuses = [];
+      let contactsFromWebhook = [];
 
-        /* ===================== MENSAJES ENTRANTES ===================== */
+      if (channel === 'instagram' || channel === 'messenger') {
+        // Instagram y Messenger usan entry.messaging[]
+        const messagingEvents = Array.isArray(entry.messaging) ? entry.messaging : [];
+        // Filtrar solo eventos que tienen message (no read receipts ni otros)
+        messages = messagingEvents.filter(evt => evt.message || evt.postback);
+        // Instagram/Messenger no envían statuses en el mismo formato
+      } else {
+        // WhatsApp usa entry.changes[].value.messages[]
+        const changes = Array.isArray(entry.changes) ? entry.changes : [];
+        for (const change of changes) {
+          const value = change?.value || {};
+          messages = messages.concat(value.messages || []);
+          statuses = statuses.concat(value.statuses || []);
+          contactsFromWebhook = contactsFromWebhook.concat(value.contacts || []);
+        }
+      }
+
+      /* ===================== MENSAJES ENTRANTES ===================== */
         for (const m of messages) {
           try {
             // 🌐 MULTICANAL: Normalizar mensaje según el canal
@@ -1738,8 +1754,10 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             const textForDB = normalized.text;
 
             // Extraer nombre del contacto desde el webhook
-            const contacts = value.contacts || [];
-            const contactName = contacts[0]?.profile?.name || null;
+            // WhatsApp: viene en value.contacts; Instagram/Messenger: no envían contacts
+            const contactName = (channel === 'whatsapp')
+              ? (contactsFromWebhook[0]?.profile?.name || null)
+              : null;
 
             // Construir mediaFields desde el mensaje normalizado
             let mediaFields = null;
@@ -2061,7 +2079,6 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             logger.error({ e }, 'webhook status handler');
           }
         }
-      }
     }
 
     return res.sendStatus(200);
