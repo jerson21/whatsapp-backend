@@ -262,7 +262,7 @@ await conn.query(`
 
     -- Campos nuevos para media
     media_type VARCHAR(32) NULL,      -- image, audio, video, document, sticker, location, etc.
-    media_id VARCHAR(128) NULL,       -- ID de Meta para bajar el archivo
+    media_id TEXT NULL,               -- ID de Meta (WhatsApp) o URL directa (Instagram)
     media_mime VARCHAR(64) NULL,      -- Mime type (image/jpeg, audio/ogg, etc.)
     media_size INT NULL,              -- Tamaño en bytes (si se conoce)
     media_caption TEXT NULL,          -- Texto o caption opcional
@@ -418,6 +418,19 @@ await conn.query(`
         ADD COLUMN panel_seen_at TIMESTAMP NULL DEFAULT NULL AFTER read_at,
         ADD INDEX idx_panel_seen (panel_seen_at)
       `);
+    }
+
+    // Ampliar media_id para soportar URLs directas de Instagram (antes VARCHAR(128), muy corto)
+    const [colsMediaId] = await conn.query(`
+      SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'chat_messages'
+      AND COLUMN_NAME = 'media_id'
+    `);
+    if (colsMediaId.length && colsMediaId[0].DATA_TYPE === 'varchar' && colsMediaId[0].CHARACTER_MAXIMUM_LENGTH < 2048) {
+      logger.info('Ampliando columna media_id a TEXT en chat_messages (para URLs de Instagram)...');
+      await conn.query(`ALTER TABLE chat_messages MODIFY COLUMN media_id TEXT NULL`);
     }
 
     // Orchestrator tables
@@ -2210,8 +2223,6 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               global.io.of('/chat').to('dashboard_all').emit('new_message', echoPayload);
             }
 
-            // Actualizar timestamp de la sesión
-            await pool.query('UPDATE chat_sessions SET updated_at=NOW() WHERE id=?', [echoSessionId]);
             inboxPush({ type: 'update', sessionId: echoSessionId });
           } catch (e) {
             logger.error({ e }, 'webhook echo message handler');
