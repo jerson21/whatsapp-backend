@@ -1785,18 +1785,20 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       let statuses = [];
       let contactsFromWebhook = [];
 
+      // Echo messages de Instagram/Messenger (mensajes enviados desde la app nativa)
+      let echoMessages = [];
+
       if (channel === 'instagram' || channel === 'messenger') {
         // Instagram y Messenger usan entry.messaging[]
         const messagingEvents = Array.isArray(entry.messaging) ? entry.messaging : [];
-        // Filtrar solo eventos que tienen message (no read receipts ni otros)
-        // IMPORTANTE: Excluir echo messages (mensajes enviados por nuestra página)
-        messages = messagingEvents.filter(evt => {
+        for (const evt of messagingEvents) {
           if (evt.message?.is_echo) {
-            logger.debug({ mid: evt.message.mid }, '🔄 Ignorando echo message de Instagram/Messenger');
-            return false;
+            // Echo = mensaje enviado por nuestra página desde la app nativa
+            echoMessages.push(evt);
+          } else if (evt.message || evt.postback) {
+            messages.push(evt);
           }
-          return evt.message || evt.postback;
-        });
+        }
         // Instagram/Messenger no envían statuses en el mismo formato
       } else {
         // WhatsApp usa entry.changes[].value.messages[]
@@ -2092,6 +2094,65 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             }
           } catch (e) {
             logger.error({ e }, 'webhook message handler');
+          }
+        }
+
+        /* ===================== ECHO MESSAGES (enviados desde app nativa IG/Messenger) ===================== */
+        for (const echo of echoMessages) {
+          try {
+            const recipientId = echo.recipient?.id; // El usuario al que le enviamos
+            const msgText = echo.message?.text || '';
+            const msgId = echo.message?.mid || `echo_${Date.now()}`;
+
+            if (!recipientId || !msgText) continue;
+
+            // Buscar sesión abierta para este usuario
+            const [sessRows] = await pool.query(
+              `SELECT id FROM chat_sessions WHERE phone=? AND channel=? AND status='OPEN' ORDER BY id DESC LIMIT 1`,
+              [recipientId, channel]
+            );
+
+            if (!sessRows.length) {
+              logger.debug({ recipientId, channel }, '🔄 Echo message: no open session found, skipping');
+              continue;
+            }
+
+            const echoSessionId = sessRows[0].id;
+
+            // Verificar que no esté duplicado (ya enviado desde nuestro panel)
+            const [existing] = await pool.query(
+              `SELECT id FROM chat_messages WHERE wa_msg_id=? LIMIT 1`,
+              [msgId]
+            );
+            if (existing.length) {
+              logger.debug({ mid: msgId }, '🔄 Echo message already in DB, skipping');
+              continue;
+            }
+
+            // Insertar como mensaje saliente
+            const [ins] = await pool.query(
+              `INSERT INTO chat_messages (session_id, direction, text, wa_jid, wa_msg_id, status, channel)
+               VALUES (?, 'out', ?, ?, ?, 'sent', ?)`,
+              [echoSessionId, msgText, recipientId, msgId, channel]
+            );
+
+            logger.info({ sessionId: echoSessionId, mid: msgId, channel }, '📤 Echo message saved as outgoing');
+
+            // Notificar al panel via SSE
+            ssePush(echoSessionId, {
+              type: 'message',
+              direction: 'out',
+              text: msgText,
+              msgId,
+              status: 'sent',
+              at: Date.now()
+            });
+
+            // Actualizar timestamp de la sesión
+            await pool.query('UPDATE chat_sessions SET updated_at=NOW() WHERE id=?', [echoSessionId]);
+            inboxPush({ type: 'update', sessionId: echoSessionId });
+          } catch (e) {
+            logger.error({ e }, 'webhook echo message handler');
           }
         }
 
