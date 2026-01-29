@@ -394,16 +394,18 @@ export default function Conversations() {
 
     const isOutgoing = msg.direction === 'outgoing'
     const baseUrl = '/api/chat/media'
+    // Instagram/Messenger: media_id es URL directa; WhatsApp: es un ID que requiere proxy
+    const mediaUrl = (id && (id.startsWith('http://') || id.startsWith('https://'))) ? id : `${baseUrl}/${id}`
 
     switch (type) {
       case 'image':
         return (
           <div className="mt-2 rounded-lg overflow-hidden max-w-xs">
             <img
-              src={`${baseUrl}/${id}`}
+              src={mediaUrl}
               alt="Imagen"
               className="w-full h-auto cursor-pointer hover:opacity-90"
-              onClick={() => window.open(`${baseUrl}/${id}`, '_blank')}
+              onClick={() => window.open(mediaUrl, '_blank')}
               onError={(e) => {
                 e.target.style.display = 'none'
                 e.target.nextSibling.style.display = 'flex'
@@ -420,7 +422,7 @@ export default function Conversations() {
         return (
           <div className="mt-2 rounded-lg overflow-hidden max-w-xs">
             <video
-              src={`${baseUrl}/${id}`}
+              src={mediaUrl}
               controls
               className="w-full h-auto rounded-lg"
               preload="metadata"
@@ -435,7 +437,7 @@ export default function Conversations() {
           <div className={`mt-2 flex items-center gap-2 p-2 rounded-lg ${isOutgoing ? 'bg-green-600' : 'bg-gray-100'}`}>
             <Mic className={`w-5 h-5 ${isOutgoing ? 'text-white' : 'text-green-600'}`} />
             <audio
-              src={`${baseUrl}/${id}`}
+              src={mediaUrl}
               controls
               className="h-8 flex-1"
               preload="metadata"
@@ -447,7 +449,7 @@ export default function Conversations() {
         const filename = extra?.filename || 'Documento'
         return (
           <a
-            href={`${baseUrl}/${id}`}
+            href={mediaUrl}
             target="_blank"
             rel="noopener noreferrer"
             className={`mt-2 flex items-center gap-3 p-3 rounded-lg ${isOutgoing ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-100 hover:bg-gray-200'} transition`}
@@ -469,7 +471,7 @@ export default function Conversations() {
         return (
           <div className="mt-2">
             <img
-              src={`${baseUrl}/${id}`}
+              src={mediaUrl}
               alt="Sticker"
               className="w-32 h-32 object-contain"
               onError={(e) => {

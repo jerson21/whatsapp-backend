@@ -622,6 +622,13 @@ app.get('/api/chat/media', async (req, res) => {
       mediaId = String(msg.media_id);
     }
 
+    // Instagram/Messenger: media_id es una URL directa, no un ID de Graph API
+    if (mediaId.startsWith('http://') || mediaId.startsWith('https://')) {
+      logger.info({ mediaId }, '↪️ Redirigiendo a URL directa (Instagram/Messenger)');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return res.redirect(302, mediaId);
+    }
+
     const infoUrl = `https://graph.facebook.com/${GRAPH_API_VERSION}/${mediaId}`;
     logger.info({ infoUrl }, '🌍 GET media info');
     const r = await fetch(infoUrl, { headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}` } });
@@ -666,6 +673,12 @@ app.get('/api/chat/media/:mediaId', async (req, res) => {
     }
 
     logger.info({ mediaId }, '📩 GET /api/chat/media/:mediaId');
+
+    // Instagram/Messenger: media_id puede ser URL directa (no debería llegar aquí, pero por si acaso)
+    if (mediaId.startsWith('http://') || mediaId.startsWith('https://')) {
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return res.redirect(302, mediaId);
+    }
 
     // Descargar desde Graph API
     const infoUrl = `https://graph.facebook.com/${GRAPH_API_VERSION}/${mediaId}`;
