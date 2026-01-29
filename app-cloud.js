@@ -2651,20 +2651,26 @@ app.post('/api/chat/send', sendLimiter, async (req, res) => {
 
     // Validate session
     const [rows] = await pool.query(
-      `SELECT phone FROM chat_sessions WHERE id=? AND token=? AND status='OPEN'`,
+      `SELECT phone, channel FROM chat_sessions WHERE id=? AND token=? AND status='OPEN'`,
       [sessionId, token]
     );
     if (!rows.length) return res.status(401).json({ ok: false, error: 'Sesión inválida' });
 
-    const phone = rows[0].phone; // E.164 sin '+'
+    const phone = rows[0].phone;
+    const sessionChannel = rows[0].channel || 'whatsapp';
 
-    // Enviar mensaje a Cloud API
-    const waMsgId = await sendTextViaCloudAPI(phone, String(text));
+    // Enviar mensaje según el canal de la sesión
+    let waMsgId;
+    if (sessionChannel === 'whatsapp') {
+      waMsgId = await sendTextViaCloudAPI(phone, String(text));
+    } else {
+      waMsgId = await channelAdapters.sendMessage(sessionChannel, phone, String(text));
+    }
 
     // Insert with status 'sent' (Cloud API actualizará por webhook)
     const [result] = await pool.query(
-      `INSERT INTO chat_messages (session_id, direction, text, wa_jid, wa_msg_id, status) VALUES (?,?,?,?,?,?)`,
-      [sessionId, 'out', String(text), phone, waMsgId, 'sent']
+      `INSERT INTO chat_messages (session_id, direction, text, wa_jid, wa_msg_id, status, channel) VALUES (?,?,?,?,?,?,?)`,
+      [sessionId, 'out', String(text), phone, waMsgId, 'sent', sessionChannel]
     );
 
     // 🤖 Cuando agente humano envía mensaje, cambiar a modo manual
