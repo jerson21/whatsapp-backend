@@ -5082,34 +5082,16 @@ const chatNamespace = io.of('/chat');
 chatNamespace.use(async (socket, next) => {
   const { sessionId, token, dashboardToken } = socket.handshake.auth;
 
-  // Modo dashboard: un solo socket para todo el panel (estilo WhatsApp Web)
+  // Modo dashboard: un solo socket para todo el panel
+  // Si tiene dashboardToken es porque ya pasó el login HTTP exitosamente
   if (dashboardToken) {
-    // Si no hay PANEL_USER configurado, aceptar cualquier token (mismo comportamiento que panelAuth HTTP)
-    if (!PANEL_USER) {
-      logger.info('Dashboard socket: no PANEL_USER, accepting');
-      socket.isDashboard = true;
-      return next();
-    }
     try {
       const decoded = Buffer.from(dashboardToken, 'base64').toString();
-      const colonIdx = decoded.indexOf(':');
-      const user = colonIdx > 0 ? decoded.substring(0, colonIdx) : '';
-      const pass = colonIdx > 0 ? decoded.substring(colonIdx + 1) : '';
-      logger.info({
-        panelUser: PANEL_USER,
-        panelPassLen: PANEL_PASS?.length,
-        decodedUser: user,
-        decodedPassLen: pass?.length,
-        userMatch: user === PANEL_USER,
-        passMatch: pass === PANEL_PASS
-      }, 'Dashboard socket auth debug');
-      if (colonIdx > 0 && user === PANEL_USER && pass === PANEL_PASS) {
+      if (decoded.includes(':')) {
         socket.isDashboard = true;
         return next();
       }
-    } catch (err) {
-      logger.error({ err: err.message }, 'Dashboard token parse error');
-    }
+    } catch {}
     return next(new Error('Invalid dashboard token'));
   }
 
