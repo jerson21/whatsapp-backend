@@ -44,8 +44,8 @@ services:
       - DB_PASS=dev123
       - DB_NAME=whatsapp_chat
       - LOG_LEVEL=debug
-      - VISUAL_FLOWS_ENABLED=true
-      - CHATBOT_GLOBAL_ENABLED=true
+      - VISUAL_FLOWS_ENABLED=${VISUAL_FLOWS_ENABLED:-true}
+      - CHATBOT_GLOBAL_ENABLED=${CHATBOT_GLOBAL_ENABLED:-false}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     depends_on:

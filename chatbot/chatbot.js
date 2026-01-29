@@ -34,12 +34,12 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
 
   // Cargar flujos activos al inicio
   visualFlowEngine.loadActiveFlows().catch(e => {
-    logger.warn({ e }, 'Error loading visual flows at startup');
+    logger.warn({ err: e, message: e?.message }, 'Error loading visual flows at startup');
   });
 
   // Cargar reglas del clasificador al inicio
   messageClassifier.loadRules().catch(e => {
-    logger.warn({ e }, 'Error loading classifier rules at startup');
+    logger.warn({ err: e, message: e?.message }, 'Error loading classifier rules at startup');
   });
 
   /**
@@ -243,12 +243,12 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
         logger.info({ sessionId, waMsgId, messageId }, '🎯 Fallback enviado');
 
       } catch (e) {
-        logger.error({ e, phone }, 'Error en Visual Flow Engine');
+        logger.error({ err: e, phone, message: e?.message, stack: e?.stack }, 'Error en Visual Flow Engine');
         // En caso de error, no enviar nada para evitar confusión
       }
 
     } catch (e) {
-      logger.error({ e }, 'handleChatbotMessage error');
+      logger.error({ err: e, message: e?.message }, 'handleChatbotMessage error');
     }
   }
 

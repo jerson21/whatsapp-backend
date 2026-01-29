@@ -373,10 +373,17 @@ NUNCA:
 
         // Enviar saludo personalizado en lugar de repetir el flujo
         if (this.sendMessage) {
-          await this.sendMessage(phone, `¡Hola de nuevo ${savedFields.nombre}! 👋 ¿En qué puedo ayudarte hoy?`);
+          try {
+            const sid = context?.sessionId || null;
+            await this.sendMessage(phone, `¡Hola de nuevo ${savedFields.nombre}! 👋 ¿En qué puedo ayudarte hoy?`, sid);
+            return { type: 'personalized_greeting', user: savedFields.nombre };
+          } catch (sendErr) {
+            logger.error({ err: sendErr, message: sendErr?.message, phone }, 'Error enviando saludo personalizado');
+            // No retornar — caer al flujo normal como fallback
+          }
+        } else {
+          return { type: 'personalized_greeting', user: savedFields.nombre };
         }
-
-        return { type: 'personalized_greeting', user: savedFields.nombre };
       }
     }
 
