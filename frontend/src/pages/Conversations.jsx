@@ -35,19 +35,15 @@ export default function Conversations() {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [search, setSearch] = useState('')
-  const [typingOperators, setTypingOperators] = useState(new Set())
   const messagesEndRef = useRef(null)
-  const typingTimeoutRef = useRef(null)
 
   // Obtener conversación seleccionada
   const selectedConversation = conversations.find(c => c.phone === selectedPhone)
+  const selectedPhoneRef = useRef(selectedPhone)
+  selectedPhoneRef.current = selectedPhone
 
-  // Conectar socket solo cuando hay conversación seleccionada
-  const { socket, connected } = useSocket(
-    '/chat',
-    selectedConversation?.sessionId,
-    selectedConversation?.token
-  )
+  // Socket global del dashboard (un solo socket para todo, estilo WhatsApp Web)
+  const { socket, connected } = useSocket('/chat')
 
   useEffect(() => {
     loadConversations()
@@ -73,70 +69,42 @@ export default function Conversations() {
   useEffect(() => {
     if (!socket) return
 
-    // Nuevo mensaje (de cualquier operador o cliente)
+    // Nuevo mensaje (de cualquier conversación - socket global)
     socket.on('new_message', (data) => {
       console.log('Nuevo mensaje via WebSocket:', data)
 
-      // Agregar mensaje a la lista (prevenir duplicados por ID)
-      setMessages(prev => {
-        const exists = prev.find(m => m.waMsgId === data.msgId || m.id === data.dbId)
-        if (exists) return prev
+      // Solo agregar al chat si corresponde a la conversación seleccionada
+      if (data.phone && data.phone === selectedPhoneRef.current) {
+        setMessages(prev => {
+          const exists = prev.find(m => m.waMsgId === data.msgId || m.id === data.dbId)
+          if (exists) return prev
 
-        return [...prev, {
-          id: data.dbId || Date.now(),
-          direction: data.direction === 'in' ? 'incoming' : 'outgoing',
-          body: data.text,
-          content: data.text,
-          created_at: new Date(data.timestamp).toISOString(),
-          status: data.status,
-          waMsgId: data.msgId,
-          is_bot: data.isAI || false,
-          // Información de media
-          mediaType: data.media?.type || null,
-          mediaId: data.media?.id || data.mediaId || null,
-          mediaMime: data.media?.mime || null,
-          mediaCaption: data.media?.caption || null,
-          mediaExtra: data.media?.extra || null,
-          media: data.media // Mantener referencia completa para compatibilidad
-        }]
-      })
+          return [...prev, {
+            id: data.dbId || Date.now(),
+            direction: data.direction === 'in' ? 'incoming' : 'outgoing',
+            body: data.text,
+            content: data.text,
+            created_at: new Date(data.timestamp).toISOString(),
+            status: data.status,
+            waMsgId: data.msgId,
+            is_bot: data.isAI || false,
+            mediaType: data.media?.type || null,
+            mediaId: data.media?.id || data.mediaId || null,
+            mediaMime: data.media?.mime || null,
+            mediaCaption: data.media?.caption || null,
+            mediaExtra: data.media?.extra || null,
+            media: data.media
+          }]
+        })
+      }
 
-      // Recargar lista de conversaciones para actualizar "último mensaje"
+      // Siempre actualizar la lista lateral (último mensaje, badge, etc.)
       loadConversations()
     })
 
-    // Operador escribiendo
-    socket.on('operator_typing', (data) => {
-      if (data.typing) {
-        setTypingOperators(prev => new Set(prev).add(data.socketId))
-      } else {
-        setTypingOperators(prev => {
-          const newSet = new Set(prev)
-          newSet.delete(data.socketId)
-          return newSet
-        })
-      }
-    })
-
-    // Operador se unió
-    socket.on('operator_joined', (data) => {
-      console.log('Operador se unió:', data.socketId)
-    })
-
-    // Operador salió
-    socket.on('operator_left', (data) => {
-      console.log('Operador salió:', data.socketId)
-      setTypingOperators(prev => {
-        const newSet = new Set(prev)
-        newSet.delete(data.socketId)
-        return newSet
-      })
-    })
-
-    // Escalamiento
+    // Escalamiento (de cualquier conversación)
     socket.on('escalation', (data) => {
       console.log('Escalamiento detectado:', data)
-      // Recargar conversaciones para ver el cambio de estado
       loadConversations()
     })
 
@@ -152,9 +120,6 @@ export default function Conversations() {
 
     return () => {
       socket.off('new_message')
-      socket.off('operator_typing')
-      socket.off('operator_joined')
-      socket.off('operator_left')
       socket.off('escalation')
       socket.off('message_status_update')
     }
@@ -187,30 +152,10 @@ export default function Conversations() {
 
   const handleInputChange = (e) => {
     setNewMessage(e.target.value)
-
-    if (!socket) return
-
-    // Emitir typing_start
-    socket.emit('typing_start')
-
-    // Cancelar timeout previo
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current)
-    }
-
-    // Emitir typing_stop después de 3 segundos de inactividad
-    typingTimeoutRef.current = setTimeout(() => {
-      socket.emit('typing_stop')
-    }, 3000)
   }
 
   const handleSend = async () => {
     if (!newMessage.trim() || !selectedPhone || sending) return
-
-    // Emitir typing_stop
-    if (socket) {
-      socket.emit('typing_stop')
-    }
 
     setSending(true)
     try {
@@ -238,19 +183,6 @@ export default function Conversations() {
   )
 
   const selectedConv = conversations.find(c => c.phone === selectedPhone)
-
-  // Mostrar indicador de "escribiendo"
-  const renderTypingIndicator = () => {
-    if (typingOperators.size === 0) return null
-
-    return (
-      <div className="px-4 py-2 bg-gray-50 text-sm text-gray-600 italic">
-        {typingOperators.size === 1
-          ? 'Un operador está escribiendo...'
-          : `${typingOperators.size} operadores están escribiendo...`}
-      </div>
-    )
-  }
 
   // Renderizar contenido multimedia
   const renderMediaContent = (msg) => {
@@ -604,9 +536,6 @@ export default function Conversations() {
               ))}
               <div ref={messagesEndRef} />
             </div>
-
-            {/* Indicador de "escribiendo" */}
-            {renderTypingIndicator()}
 
             {/* Input */}
             <div className="bg-white border-t border-gray-200 p-4">

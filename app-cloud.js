@@ -1541,17 +1541,21 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
             // Emitir por Socket.IO
             if (global.io) {
-              global.io.of('/chat').to(`session_${sessionId}`).emit('new_message', {
+              const msgPayload = {
                 type: 'message',
                 direction: 'in',
                 text: textForDB,
+                phone: from,
+                sessionId,
                 media: mediaForSSE,
                 mediaId: mediaFields?.media_id || null,
                 msgId: waMsgId,
                 dbId: dbMessageId,
                 status: 'received',
                 timestamp: Date.now()
-              });
+              };
+              global.io.of('/chat').to(`session_${sessionId}`).emit('new_message', msgPayload);
+              global.io.of('/chat').to('dashboard_all').emit('new_message', msgPayload);
             }
 
             logger.info(`📨 IN ${from}: ${String(textForDB).substring(0, 160)}`);
@@ -1699,11 +1703,14 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
               // Emitir por Socket.IO
               if (global.io) {
-                global.io.of('/chat').to(`session_${row.session_id}`).emit('message_status_update', {
+                const statusPayload = {
                   msgId: waMsgId,
+                  sessionId: row.session_id,
                   status,
                   timestamp: Date.now()
-                });
+                };
+                global.io.of('/chat').to(`session_${row.session_id}`).emit('message_status_update', statusPayload);
+                global.io.of('/chat').to('dashboard_all').emit('message_status_update', statusPayload);
               }
             }
           } catch (e) {
@@ -2305,15 +2312,19 @@ app.post('/api/chat/send', sendLimiter, async (req, res) => {
 
     // Emitir por Socket.IO
     if (global.io) {
-      global.io.of('/chat').to(`session_${sessionId}`).emit('new_message', {
+      const outPayload = {
         type: 'message',
         direction: 'out',
         text,
+        phone: to,
+        sessionId,
         msgId: waMsgId,
         dbId: messageId,
         status: 'sent',
         timestamp: Date.now()
-      });
+      };
+      global.io.of('/chat').to(`session_${sessionId}`).emit('new_message', outPayload);
+      global.io.of('/chat').to('dashboard_all').emit('new_message', outPayload);
     }
 
     res.json({ ok: true, msgId: waMsgId, messageId });
@@ -2393,15 +2404,19 @@ app.post('/api/chat/simulate', express.json(), async (req, res) => {
 
     // Emitir por Socket.IO
     if (global.io) {
-      global.io.of('/chat').to(`session_${sessionId}`).emit('new_message', {
+      const simPayload = {
         type: 'message',
         direction: 'in',
         text,
+        phone: phone,
+        sessionId,
         msgId: simulatedWaMsgId,
         dbId: dbMessageId,
         status: 'delivered',
         timestamp: Date.now()
-      });
+      };
+      global.io.of('/chat').to(`session_${sessionId}`).emit('new_message', simPayload);
+      global.io.of('/chat').to('dashboard_all').emit('new_message', simPayload);
     }
 
     // ========================================
@@ -2762,12 +2777,14 @@ async function applyRouteAction(route, { sessionId, phone, text, interactive }) 
       ssePush(Number(sessionId), { type: 'agent_required', reason: 'route_set_manual', at: Date.now() });
       // Emitir escalamiento por Socket.IO
       if (global.io) {
-        global.io.of('/chat').to(`session_${sessionId}`).emit('escalation', {
+        const escPayload = {
           sessionId,
           phone,
           reason: 'route_set_manual',
           timestamp: Date.now()
-        });
+        };
+        global.io.of('/chat').to(`session_${sessionId}`).emit('escalation', escPayload);
+        global.io.of('/chat').to('dashboard_all').emit('escalation', escPayload);
       }
     }
     return { ok: true };
@@ -5063,13 +5080,25 @@ const chatNamespace = io.of('/chat');
 
 // Autenticación de sockets
 chatNamespace.use(async (socket, next) => {
-  const { sessionId, token } = socket.handshake.auth;
+  const { sessionId, token, dashboardToken } = socket.handshake.auth;
 
+  // Modo dashboard: un solo socket para todo el panel (estilo WhatsApp Web)
+  if (dashboardToken) {
+    try {
+      const [user, pass] = Buffer.from(dashboardToken, 'base64').toString().split(':');
+      if (user === PANEL_USER && pass === PANEL_PASS) {
+        socket.isDashboard = true;
+        return next();
+      }
+    } catch {}
+    return next(new Error('Invalid dashboard token'));
+  }
+
+  // Modo sesión individual (compatibilidad)
   if (!sessionId || !token) {
     return next(new Error('Authentication error'));
   }
 
-  // Validar sessionId y token en BD
   try {
     const [rows] = await pool.query(
       'SELECT phone FROM chat_sessions WHERE id=? AND token=? AND status="OPEN"',
@@ -5089,6 +5118,18 @@ chatNamespace.use(async (socket, next) => {
 });
 
 chatNamespace.on('connection', (socket) => {
+  // Modo dashboard: un solo socket recibe TODO
+  if (socket.isDashboard) {
+    socket.join('dashboard_all');
+    logger.info({ socketId: socket.id }, 'Dashboard socket conectado');
+
+    socket.on('disconnect', () => {
+      logger.info({ socketId: socket.id }, 'Dashboard socket desconectado');
+    });
+    return;
+  }
+
+  // Modo sesión individual (compatibilidad)
   const { sessionId, phone } = socket;
 
   logger.info({ sessionId, phone, socketId: socket.id }, 'Socket conectado');
