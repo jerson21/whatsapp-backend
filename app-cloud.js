@@ -872,6 +872,49 @@ function normalizePhoneCL(raw) {
   return digits;
 }
 
+// Cache de perfiles de Instagram/Messenger (evita llamar Graph API en cada mensaje)
+const igProfileCache = new Map();
+const IG_PROFILE_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 horas
+
+/**
+ * Obtener nombre/username de un usuario de Instagram via Graph API
+ * @param {string} userId - Instagram-scoped user ID
+ * @returns {Promise<string|null>} nombre o @username, o null si falla
+ */
+async function fetchInstagramProfile(userId) {
+  // Revisar cache
+  const cached = igProfileCache.get(userId);
+  if (cached && (Date.now() - cached.ts < IG_PROFILE_CACHE_TTL)) {
+    return cached.name;
+  }
+
+  const token = process.env.INSTAGRAM_PAGE_ACCESS_TOKEN || META_ACCESS_TOKEN;
+  if (!token) {
+    logger.warn('No access token available for Instagram profile lookup');
+    return null;
+  }
+
+  try {
+    const url = `https://graph.facebook.com/v22.0/${userId}?fields=name,username&access_token=${token}`;
+    const r = await fetch(url);
+    if (!r.ok) {
+      const errBody = await r.text();
+      logger.warn({ userId, status: r.status, body: errBody }, 'Failed to fetch Instagram profile');
+      return null;
+    }
+    const data = await r.json();
+    // Preferir name, sino @username
+    const displayName = data.name || (data.username ? `@${data.username}` : null);
+    // Guardar en cache
+    igProfileCache.set(userId, { name: displayName, ts: Date.now() });
+    logger.info({ userId, name: displayName, username: data.username }, '📸 Instagram profile fetched');
+    return displayName;
+  } catch (err) {
+    logger.error({ err, userId }, 'Error fetching Instagram profile');
+    return null;
+  }
+}
+
 /* ========= Auth Panel (dual-mode: JWT + Basic + API Key + legacy env) ========= */
 async function panelAuth(req, res, next) {
   const hdr = req.headers.authorization || '';
@@ -1775,11 +1818,15 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             const waMsgId = normalized.messageId;
             const textForDB = normalized.text;
 
-            // Extraer nombre del contacto desde el webhook
-            // WhatsApp: viene en value.contacts; Instagram/Messenger: no envían contacts
-            const contactName = (channel === 'whatsapp')
-              ? (contactsFromWebhook[0]?.profile?.name || null)
-              : null;
+            // Extraer nombre del contacto
+            // WhatsApp: viene en value.contacts
+            // Instagram/Messenger: se obtiene via Graph API
+            let contactName = null;
+            if (channel === 'whatsapp') {
+              contactName = contactsFromWebhook[0]?.profile?.name || null;
+            } else if (channel === 'instagram' || channel === 'messenger') {
+              contactName = await fetchInstagramProfile(from);
+            }
 
             // Construir mediaFields desde el mensaje normalizado
             let mediaFields = null;
