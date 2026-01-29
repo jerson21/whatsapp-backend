@@ -61,6 +61,7 @@ export default function Conversations() {
   const [sending, setSending] = useState(false)
   const [search, setSearch] = useState('')
   const messagesEndRef = useRef(null)
+  const isInitialLoadRef = useRef(true)
 
   // Obtener conversación seleccionada
   const selectedConversation = conversations.find(c => c.phone === selectedPhone)
@@ -86,6 +87,7 @@ export default function Conversations() {
   useEffect(() => {
     if (!selectedPhone) return
 
+    isInitialLoadRef.current = true
     loadMessages(selectedPhone)
     setSearchParams({ phone: selectedPhone })
   }, [selectedPhone])
@@ -155,7 +157,12 @@ export default function Conversations() {
   }, [socket])
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (isInitialLoadRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
+      isInitialLoadRef.current = false
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
   }, [messages])
 
   const loadConversations = async () => {
