@@ -215,9 +215,10 @@ export default function Conversations() {
     }
   }, [messages])
 
-  const loadConversations = async () => {
+  const loadConversations = async (filterOverride) => {
     try {
-      const data = await fetchConversations(activeFilterRef.current)
+      const filterToUse = filterOverride || activeFilterRef.current
+      const data = await fetchConversations(filterToUse)
       setConversations(data.conversations || [])
     } catch (err) {
       console.error('Error loading conversations:', err)
@@ -490,7 +491,11 @@ export default function Conversations() {
               return (
                 <button
                   key={tab.key}
-                  onClick={() => setActiveFilter(tab.key)}
+                  onClick={() => {
+                    setActiveFilter(tab.key)
+                    activeFilterRef.current = tab.key
+                    loadConversations(tab.key)
+                  }}
                   className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all ${
                     activeFilter === tab.key
                       ? 'bg-white text-green-700 shadow-sm'

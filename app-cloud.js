@@ -3816,17 +3816,20 @@ app.get('/api/chat/conversations', async (req, res) => {
       whereExtra = ' AND s.assigned_agent_id = ?';
       params.push(agentId);
     } else if (filter === 'mine' && agentRole === 'supervisor') {
-      // Admin/supervisor legacy (id=0): ver todo
-      // no agrega filtro
+      // Supervisor: chats asignados a algún agente (atendidos)
+      whereExtra = ' AND s.assigned_agent_id IS NOT NULL';
     } else if (filter === 'department') {
       const deptId = departmentId || agentDeptId;
       if (deptId) {
         whereExtra = ' AND s.assigned_department_id = ?';
         params.push(deptId);
+      } else {
+        // Admin sin departamento: chats que tienen departamento asignado
+        whereExtra = ' AND s.assigned_department_id IS NOT NULL';
       }
-      // Si no hay deptId (admin legacy), no filtra → ve todo
     } else if (filter === 'unassigned') {
-      whereExtra = ' AND s.assigned_agent_id IS NULL';
+      // Sin asignar = sin agente Y sin departamento
+      whereExtra = ' AND s.assigned_agent_id IS NULL AND s.assigned_department_id IS NULL';
     } else if (filter === 'all') {
       // supervisor ve todo, agente normal ve su depto + propios
       if (agentRole !== 'supervisor' && agentId > 0) {
