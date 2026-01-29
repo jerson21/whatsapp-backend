@@ -1582,21 +1582,19 @@ app.get('/webhook', (req, res) => {
 /** Util: asegurar firma X-Hub (Meta) */
 function verifyMetaSignature(rawBody, signatureHeader) {
   try {
-    if (!signatureHeader || !META_APP_SECRET) return false;
-    const hmac = crypto.createHmac('sha256', META_APP_SECRET);
-    hmac.update(rawBody, 'utf8');
-    const expected = 'sha256=' + hmac.digest('hex');
-    const isValid = crypto.timingSafeEqual(Buffer.from(signatureHeader), Buffer.from(expected));
-    if (!isValid) {
-      logger.debug({
-        received: signatureHeader.substring(0, 30),
-        expected: expected.substring(0, 30),
-        secretPreview: META_APP_SECRET.substring(0, 6) + '...',
-        bodyIsBuffer: Buffer.isBuffer(rawBody),
-        bodyType: typeof rawBody
-      }, 'Signature mismatch detail');
+    if (!signatureHeader) return false;
+    // Soportar múltiples secrets (WhatsApp e Instagram pueden usar secrets distintos)
+    const secrets = [META_APP_SECRET, process.env.META_APP_SECRET_2].filter(Boolean);
+    if (!secrets.length) return false;
+    for (const secret of secrets) {
+      const hmac = crypto.createHmac('sha256', secret);
+      hmac.update(rawBody, 'utf8');
+      const expected = 'sha256=' + hmac.digest('hex');
+      if (crypto.timingSafeEqual(Buffer.from(signatureHeader), Buffer.from(expected))) {
+        return true;
+      }
     }
-    return isValid;
+    return false;
   } catch {
     return false;
   }
