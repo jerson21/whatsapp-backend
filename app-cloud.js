@@ -5086,21 +5086,30 @@ chatNamespace.use(async (socket, next) => {
   if (dashboardToken) {
     // Si no hay PANEL_USER configurado, aceptar cualquier token (mismo comportamiento que panelAuth HTTP)
     if (!PANEL_USER) {
+      logger.info('Dashboard socket: no PANEL_USER, accepting');
       socket.isDashboard = true;
       return next();
     }
     try {
       const decoded = Buffer.from(dashboardToken, 'base64').toString();
       const colonIdx = decoded.indexOf(':');
-      if (colonIdx > 0) {
-        const user = decoded.substring(0, colonIdx);
-        const pass = decoded.substring(colonIdx + 1);
-        if (user === PANEL_USER && pass === PANEL_PASS) {
-          socket.isDashboard = true;
-          return next();
-        }
+      const user = colonIdx > 0 ? decoded.substring(0, colonIdx) : '';
+      const pass = colonIdx > 0 ? decoded.substring(colonIdx + 1) : '';
+      logger.info({
+        panelUser: PANEL_USER,
+        panelPassLen: PANEL_PASS?.length,
+        decodedUser: user,
+        decodedPassLen: pass?.length,
+        userMatch: user === PANEL_USER,
+        passMatch: pass === PANEL_PASS
+      }, 'Dashboard socket auth debug');
+      if (colonIdx > 0 && user === PANEL_USER && pass === PANEL_PASS) {
+        socket.isDashboard = true;
+        return next();
       }
-    } catch {}
+    } catch (err) {
+      logger.error({ err: err.message }, 'Dashboard token parse error');
+    }
     return next(new Error('Invalid dashboard token'));
   }
 
