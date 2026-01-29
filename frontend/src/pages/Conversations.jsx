@@ -75,7 +75,6 @@ export default function Conversations() {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [search, setSearch] = useState('')
-  const [activeFilter, setActiveFilter] = useState('mine')
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [showTransferModal, setShowTransferModal] = useState(false)
   const messagesEndRef = useRef(null)
@@ -83,6 +82,9 @@ export default function Conversations() {
 
   const agent = useAuthStore((s) => s.agent)
   const isSupervisor = agent?.role === 'supervisor'
+
+  // Supervisores ven todo por defecto, agentes ven sus chats
+  const [activeFilter, setActiveFilter] = useState(isSupervisor ? 'all' : 'mine')
 
   // Obtener conversación seleccionada
   const selectedConversation = conversations.find(c => c.phone === selectedPhone)
@@ -268,7 +270,7 @@ export default function Conversations() {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
-        body: JSON.stringify({ sessionId: selectedConversation.session_id })
+        body: JSON.stringify({ sessionId: selectedConversation.session_id || selectedConversation.sessionId || selectedConversation.id })
       })
       const data = await res.json()
       if (data.ok) loadConversations()
@@ -480,21 +482,21 @@ export default function Conversations() {
           <h2 className="text-xl font-bold text-gray-800 mb-3">Conversaciones</h2>
 
           {/* Filter Tabs */}
-          <div className="flex gap-1 mb-3 overflow-x-auto">
+          <div className={`grid ${isSupervisor ? 'grid-cols-4' : 'grid-cols-3'} gap-1 mb-3 bg-gray-100 p-1 rounded-xl`}>
             {visibleTabs.map(tab => {
               const Icon = tab.icon
               return (
                 <button
                   key={tab.key}
                   onClick={() => setActiveFilter(tab.key)}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition ${
+                  className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all ${
                     activeFilter === tab.key
-                      ? 'bg-green-100 text-green-700 ring-1 ring-green-300'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      ? 'bg-white text-green-700 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
                   <Icon className="w-3.5 h-3.5" />
-                  {tab.label}
+                  <span className="hidden sm:inline">{tab.label}</span>
                 </button>
               )
             })}
@@ -641,38 +643,38 @@ export default function Conversations() {
 
               {/* Actions */}
               <div className="flex items-center gap-2">
-                {/* Self-assign button */}
-                {selectedConv?.session_id && (!selectedConv.assigned_agent_id || selectedConv.assigned_agent_id !== agent?.id) && (
+                {/* Self-assign button - cuando no está asignado al agente actual */}
+                {selectedConv && agent?.id > 0 && (!selectedConv.assigned_agent_id || selectedConv.assigned_agent_id !== agent.id) && (
                   <button
                     onClick={handleSelfAssign}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs bg-green-50 text-green-700 hover:bg-green-100 rounded-lg transition"
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-green-50 text-green-700 hover:bg-green-100 rounded-lg border border-green-200 transition"
                     title="Tomar este chat"
                   >
-                    <UserPlus className="w-3.5 h-3.5" />
+                    <UserPlus className="w-4 h-4" />
                     Tomar
                   </button>
                 )}
 
-                {/* Assign button */}
-                {selectedConv?.session_id && (isSupervisor || selectedConv.assigned_agent_id === agent?.id) && (
+                {/* Assign button - siempre visible para supervisores */}
+                {selectedConv && (
                   <button
                     onClick={() => setShowAssignModal(true)}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg transition"
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-gray-50 text-gray-700 hover:bg-gray-100 rounded-lg border border-gray-200 transition"
                     title="Asignar chat"
                   >
-                    <UserPlus className="w-3.5 h-3.5" />
+                    <UserPlus className="w-4 h-4" />
                     Asignar
                   </button>
                 )}
 
                 {/* Transfer button */}
-                {selectedConv?.session_id && (isSupervisor || selectedConv.assigned_agent_id === agent?.id) && (
+                {selectedConv && (
                   <button
                     onClick={() => setShowTransferModal(true)}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg transition"
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg border border-blue-200 transition"
                     title="Transferir chat"
                   >
-                    <ArrowRightLeft className="w-3.5 h-3.5" />
+                    <ArrowRightLeft className="w-4 h-4" />
                     Transferir
                   </button>
                 )}
@@ -775,9 +777,9 @@ export default function Conversations() {
       </div>
 
       {/* Modals */}
-      {showAssignModal && selectedConv?.session_id && (
+      {showAssignModal && selectedConv && (
         <AssignModal
-          sessionId={selectedConv.session_id}
+          sessionId={selectedConv.session_id || selectedConv.sessionId || selectedConv.id}
           currentAgentId={selectedConv.assigned_agent_id}
           currentDepartmentId={selectedConv.assigned_department_id}
           onClose={() => setShowAssignModal(false)}
@@ -785,9 +787,9 @@ export default function Conversations() {
         />
       )}
 
-      {showTransferModal && selectedConv?.session_id && (
+      {showTransferModal && selectedConv && (
         <TransferModal
-          sessionId={selectedConv.session_id}
+          sessionId={selectedConv.session_id || selectedConv.sessionId || selectedConv.id}
           currentAgentId={selectedConv.assigned_agent_id}
           currentDepartmentId={selectedConv.assigned_department_id}
           onClose={() => setShowTransferModal(false)}

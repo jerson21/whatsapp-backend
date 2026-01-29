@@ -3891,7 +3891,9 @@ app.get('/api/chat/conversations', async (req, res) => {
     const conversationsWithSessionId = conversations.map(conv => ({
       ...conv,
       sessionId: conv.id,
-      contact_name: conv.name
+      session_id: conv.id,
+      contact_name: conv.name,
+      escalation_status: conv.status
     }));
 
     res.json({ ok: true, conversations: conversationsWithSessionId });
