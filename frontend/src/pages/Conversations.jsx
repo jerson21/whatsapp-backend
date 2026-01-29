@@ -85,6 +85,8 @@ export default function Conversations() {
 
   // Supervisores ven todo por defecto, agentes ven sus chats
   const [activeFilter, setActiveFilter] = useState(isSupervisor ? 'all' : 'mine')
+  const activeFilterRef = useRef(activeFilter)
+  activeFilterRef.current = activeFilter
 
   // Obtener conversación seleccionada
   const selectedConversation = conversations.find(c => c.phone === selectedPhone)
@@ -215,7 +217,7 @@ export default function Conversations() {
 
   const loadConversations = async () => {
     try {
-      const data = await fetchConversations(activeFilter)
+      const data = await fetchConversations(activeFilterRef.current)
       setConversations(data.conversations || [])
     } catch (err) {
       console.error('Error loading conversations:', err)
@@ -496,7 +498,7 @@ export default function Conversations() {
                   }`}
                 >
                   <Icon className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">{tab.label}</span>
+                  {tab.label}
                 </button>
               )
             })}
