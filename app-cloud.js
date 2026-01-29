@@ -3986,6 +3986,7 @@ app.get('/api/chat/conversations', async (req, res) => {
         s.assigned_agent_id,
         s.assigned_department_id,
         s.assignment_type,
+        s.channel,
         a.name as agent_name,
         a.avatar_color as agent_color,
         d.display_name as department_name,

@@ -46,12 +46,12 @@ export default function Layout() {
       <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
         {/* Logo */}
         <div className="h-16 flex items-center gap-3 px-6 border-b border-gray-200">
-          <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-green-700 rounded-xl flex items-center justify-center">
+          <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-xl flex items-center justify-center">
             <Bot className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="font-bold text-gray-800">WhatsApp Bot</h1>
-            <p className="text-xs text-gray-400">Platform</p>
+            <h1 className="font-bold text-gray-800">Chat Platform</h1>
+            <p className="text-xs text-gray-400">Respaldos Chile</p>
           </div>
         </div>
 
@@ -64,7 +64,7 @@ export default function Layout() {
               className={({ isActive }) =>
                 `flex items-center gap-3 px-4 py-3 rounded-lg transition ${
                   isActive
-                    ? 'bg-green-50 text-green-600 font-medium'
+                    ? 'bg-indigo-50 text-indigo-600 font-medium'
                     : 'text-gray-600 hover:bg-gray-100'
                 }`
               }
