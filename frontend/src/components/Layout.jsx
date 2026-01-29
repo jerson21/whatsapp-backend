@@ -9,27 +9,36 @@ import {
   Activity,
   Users,
   BarChart3,
-  Radio
+  Radio,
+  UserCog,
+  Building2
 } from 'lucide-react'
-
-const navItems = [
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/conversations', icon: MessageSquare, label: 'Conversaciones' },
-  { to: '/flows', icon: GitBranch, label: 'Flujos' },
-  { to: '/logs', icon: Activity, label: 'Logs' },
-  { to: '/leads', icon: Users, label: 'Leads' },
-  { to: '/analytics', icon: BarChart3, label: 'Analytics' },
-  { to: '/monitor', icon: Radio, label: 'Monitor' }
-]
 
 export default function Layout() {
   const navigate = useNavigate()
-  const { user, logout } = useAuthStore()
+  const { agent, logout } = useAuthStore()
+  const isSupervisor = agent?.role === 'supervisor'
+
+  const navItems = [
+    { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+    { to: '/conversations', icon: MessageSquare, label: 'Conversaciones' },
+    ...(isSupervisor ? [
+      { to: '/agents', icon: UserCog, label: 'Agentes' },
+      { to: '/departments', icon: Building2, label: 'Departamentos' },
+      { to: '/flows', icon: GitBranch, label: 'Flujos' },
+      { to: '/logs', icon: Activity, label: 'Logs' },
+      { to: '/leads', icon: Users, label: 'Leads' },
+      { to: '/analytics', icon: BarChart3, label: 'Analytics' },
+      { to: '/monitor', icon: Radio, label: 'Monitor' }
+    ] : [])
+  ]
 
   const handleLogout = () => {
     logout()
     navigate('/login')
   }
+
+  const roleName = isSupervisor ? 'Supervisor' : 'Agente'
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -70,20 +79,23 @@ export default function Layout() {
         <div className="p-4 border-t border-gray-200">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
-                <span className="text-gray-600 font-medium">
-                  {user?.username?.[0]?.toUpperCase() || 'A'}
+              <div
+                className="w-10 h-10 rounded-full flex items-center justify-center"
+                style={{ backgroundColor: agent?.avatarColor || '#6366f1' }}
+              >
+                <span className="text-white font-medium text-sm">
+                  {agent?.name?.[0]?.toUpperCase() || agent?.username?.[0]?.toUpperCase() || 'A'}
                 </span>
               </div>
               <div>
-                <p className="font-medium text-gray-800">{user?.username || 'Admin'}</p>
-                <p className="text-xs text-gray-400">Administrador</p>
+                <p className="font-medium text-gray-800 text-sm">{agent?.name || agent?.username || 'Admin'}</p>
+                <p className="text-xs text-gray-400">{roleName}</p>
               </div>
             </div>
             <button
               onClick={handleLogout}
               className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
-              title="Cerrar sesión"
+              title="Cerrar sesion"
             >
               <LogOut className="w-5 h-5" />
             </button>

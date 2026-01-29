@@ -907,7 +907,8 @@ NUNCA:
         return {
           type: 'transfer_to_human',
           text: transferText,
-          variables: sessionState.variables
+          variables: sessionState.variables,
+          targetDepartmentId: node.targetDepartmentId || node.departmentId || null
         };
 
       case 'end':

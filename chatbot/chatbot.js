@@ -138,7 +138,39 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
               });
               // Cambiar a modo manual
               sessionModes.set(sessionIdNum, 'manual');
-              await pool.query(`UPDATE chat_sessions SET chatbot_mode='manual' WHERE id=?`, [sessionId]);
+              await pool.query(`UPDATE chat_sessions SET chatbot_mode='manual', escalation_status='ESCALATED', escalated_at=NOW() WHERE id=?`, [sessionId]);
+              // Auto-asignar departamento
+              try {
+                const autoAssign = require('../app-cloud.js').autoAssignDepartment;
+                if (typeof autoAssign === 'function') {
+                  // Si el flow especificó departamento, usarlo
+                  if (flowResult.targetDepartmentId) {
+                    await pool.query("UPDATE chat_sessions SET assigned_department_id=?, assigned_at=NOW(), assignment_type='auto' WHERE id=?", [flowResult.targetDepartmentId, sessionId]);
+                  } else {
+                    // Usar intent de la sesión
+                    const [[sess]] = await pool.query('SELECT last_intent FROM chat_sessions WHERE id=?', [sessionId]);
+                    await autoAssign(sessionId, sess?.last_intent || 'general');
+                  }
+                }
+              } catch (e) {
+                // autoAssignDepartment puede no estar disponible aún (circular dep)
+                // Intentar directamente con SQL
+                try {
+                  const [[sess]] = await pool.query('SELECT last_intent FROM chat_sessions WHERE id=?', [sessionId]);
+                  const intent = sess?.last_intent || 'general';
+                  const [depts] = await pool.query(
+                    "SELECT id FROM departments WHERE active=TRUE AND JSON_CONTAINS(auto_assign_intents, ?, '$')",
+                    [JSON.stringify(intent)]
+                  );
+                  const deptId = depts.length ? depts[0].id : null;
+                  if (deptId) {
+                    await pool.query("UPDATE chat_sessions SET assigned_department_id=?, assigned_at=NOW(), assignment_type='auto' WHERE id=?", [deptId, sessionId]);
+                  } else {
+                    const [[gen]] = await pool.query("SELECT id FROM departments WHERE name='general' AND active=TRUE");
+                    if (gen) await pool.query("UPDATE chat_sessions SET assigned_department_id=?, assigned_at=NOW(), assignment_type='auto' WHERE id=?", [gen.id, sessionId]);
+                  }
+                } catch {}
+              }
               return;
 
             case 'flow_completed':
@@ -202,15 +234,15 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
           await new Promise(r => setTimeout(r, CHATBOT_AUTO_REPLY_DELAY));
         }
 
-        // Enviar fallback
-        const waMsgId = await sendTextViaCloudAPI(phone, fallbackMessage);
+        // Enviar fallback (sendTextViaCloudAPI ya guarda en BD)
+        const waMsgId = await sendTextViaCloudAPI(phone, fallbackMessage, sessionId);
 
-        // Guardar en BD
-        const [result] = await pool.query(
-          `INSERT INTO chat_messages (session_id, direction, text, wa_jid, wa_msg_id, status, is_ai_generated) VALUES (?,?,?,?,?,?,?)`,
-          [sessionId, 'out', fallbackMessage, phone, waMsgId, 'sent', 0]
+        // Obtener el messageId del mensaje recién insertado
+        const [[lastMsg]] = await pool.query(
+          `SELECT id FROM chat_messages WHERE session_id=? AND wa_msg_id=? ORDER BY id DESC LIMIT 1`,
+          [sessionId, waMsgId]
         );
-        const messageId = result.insertId;
+        const messageId = lastMsg ? lastMsg.id : null;
 
         // Notificar al frontend
         ssePush(sessionId, {

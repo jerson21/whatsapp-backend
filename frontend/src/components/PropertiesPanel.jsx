@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useFlowStore } from '../store/flowStore'
+import { useAuthStore } from '../store/authStore'
 
 const INTENT_OPTIONS = [
   { value: 'sales', label: 'Ventas', color: '#10b981' },
@@ -20,6 +21,8 @@ export default function PropertiesPanel() {
   const { selectedNode, updateNodeData, deleteNode, isPropertiesOpen, toggleProperties } = useFlowStore()
   const [localData, setLocalData] = useState({})
   const [triggerConfig, setTriggerConfig] = useState({ type: 'keyword', keywords: [], conditions: {} })
+  const [departments, setDepartments] = useState([])
+  const token = useAuthStore((s) => s.token)
 
   useEffect(() => {
     if (selectedNode) {
@@ -30,6 +33,18 @@ export default function PropertiesPanel() {
       }
     }
   }, [selectedNode])
+
+  // Cargar departamentos cuando se selecciona un nodo transfer
+  useEffect(() => {
+    if (selectedNode?.type === 'transfer' && departments.length === 0 && token) {
+      fetch('/api/departments', {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(r => r.json())
+        .then(data => setDepartments(data.departments || []))
+        .catch(() => {})
+    }
+  }, [selectedNode?.type, token])
 
   const handleChange = (field, value) => {
     const newData = { ...localData, [field]: value }
@@ -351,6 +366,36 @@ export default function PropertiesPanel() {
           />
           <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
             Usa {'{{variable}}'} para insertar variables
+          </p>
+        </div>
+      )}
+
+      {/* Department selector (for transfer nodes) */}
+      {selectedNode.type === 'transfer' && (
+        <div style={{ marginBottom: '16px' }}>
+          <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '4px' }}>
+            Departamento destino
+          </label>
+          <select
+            value={localData.targetDepartmentId || ''}
+            onChange={(e) => handleChange('targetDepartmentId', e.target.value ? Number(e.target.value) : null)}
+            style={{
+              width: '100%',
+              padding: '8px',
+              border: '1px solid #d1d5db',
+              borderRadius: '6px',
+              fontSize: '13px'
+            }}
+          >
+            <option value="">Auto (detectar por intent)</option>
+            {departments.filter(d => d.active).map(d => (
+              <option key={d.id} value={d.id}>
+                {d.display_name || d.name}
+              </option>
+            ))}
+          </select>
+          <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
+            Si seleccionas "Auto", se usará el intent detectado para asignar departamento
           </p>
         </div>
       )}

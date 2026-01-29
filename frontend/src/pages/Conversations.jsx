@@ -6,6 +6,7 @@ import {
   sendMessage,
   markAsRead
 } from '../api/conversations'
+import { useAuthStore } from '../store/authStore'
 import { formatDistanceToNow, format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import {
@@ -22,9 +23,16 @@ import {
   Image as ImageIcon,
   Mic,
   Users,
-  Heart
+  Heart,
+  UserPlus,
+  ArrowRightLeft,
+  Building2,
+  Inbox,
+  Filter
 } from 'lucide-react'
 import { useSocket } from '../hooks/useSocket'
+import AssignModal from '../components/AssignModal'
+import TransferModal from '../components/TransferModal'
 
 const AVATAR_COLORS = [
   'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-pink-500',
@@ -51,6 +59,13 @@ function getInitials(name, phone) {
   return phone.slice(-2)
 }
 
+const FILTER_TABS = [
+  { key: 'mine', label: 'Mis Chats', icon: User },
+  { key: 'department', label: 'Departamento', icon: Building2 },
+  { key: 'unassigned', label: 'Sin Asignar', icon: Inbox },
+  { key: 'all', label: 'Todos', icon: Filter }
+]
+
 export default function Conversations() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [conversations, setConversations] = useState([])
@@ -60,8 +75,14 @@ export default function Conversations() {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [search, setSearch] = useState('')
+  const [activeFilter, setActiveFilter] = useState('mine')
+  const [showAssignModal, setShowAssignModal] = useState(false)
+  const [showTransferModal, setShowTransferModal] = useState(false)
   const messagesEndRef = useRef(null)
   const isInitialLoadRef = useRef(true)
+
+  const agent = useAuthStore((s) => s.agent)
+  const isSupervisor = agent?.role === 'supervisor'
 
   // Obtener conversación seleccionada
   const selectedConversation = conversations.find(c => c.phone === selectedPhone)
@@ -82,7 +103,7 @@ export default function Conversations() {
     return () => {
       clearInterval(interval)
     }
-  }, [])
+  }, [activeFilter])
 
   useEffect(() => {
     if (!selectedPhone) return
@@ -149,10 +170,35 @@ export default function Conversations() {
       ))
     })
 
+    // Chat asignado/transferido/liberado
+    socket.on('chat_assigned', (data) => {
+      console.log('Chat asignado:', data)
+      loadConversations()
+    })
+
+    socket.on('chat_transferred', (data) => {
+      console.log('Chat transferido:', data)
+      loadConversations()
+    })
+
+    socket.on('chat_unassigned', (data) => {
+      console.log('Chat liberado:', data)
+      loadConversations()
+    })
+
+    // Status de agente (online/offline)
+    socket.on('agent_status_change', (data) => {
+      console.log('Agent status change:', data)
+    })
+
     return () => {
       socket.off('new_message')
       socket.off('escalation')
       socket.off('message_status_update')
+      socket.off('chat_assigned')
+      socket.off('chat_transferred')
+      socket.off('chat_unassigned')
+      socket.off('agent_status_change')
     }
   }, [socket])
 
@@ -167,7 +213,7 @@ export default function Conversations() {
 
   const loadConversations = async () => {
     try {
-      const data = await fetchConversations()
+      const data = await fetchConversations(activeFilter)
       setConversations(data.conversations || [])
     } catch (err) {
       console.error('Error loading conversations:', err)
@@ -197,7 +243,6 @@ export default function Conversations() {
     try {
       await sendMessage(selectedPhone, newMessage)
       setNewMessage('')
-      // No necesitamos recargar mensajes, WebSocket lo hará automáticamente
     } catch (err) {
       console.error('Error sending message:', err)
       alert('Error al enviar mensaje')
@@ -213,6 +258,25 @@ export default function Conversations() {
     }
   }
 
+  const handleSelfAssign = async () => {
+    if (!selectedConversation) return
+    const token = useAuthStore.getState().token
+    try {
+      const res = await fetch('/api/chat/self-assign', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ sessionId: selectedConversation.session_id })
+      })
+      const data = await res.json()
+      if (data.ok) loadConversations()
+    } catch (err) {
+      console.error('Error self-assigning:', err)
+    }
+  }
+
   const filteredConversations = conversations.filter(conv =>
     (conv.contact_name?.toLowerCase() || '').includes(search.toLowerCase()) ||
     conv.phone.includes(search)
@@ -220,11 +284,15 @@ export default function Conversations() {
 
   const selectedConv = conversations.find(c => c.phone === selectedPhone)
 
+  // Tabs visibles según rol
+  const visibleTabs = isSupervisor
+    ? FILTER_TABS
+    : FILTER_TABS.filter(t => t.key !== 'all')
+
   // Renderizar contenido multimedia
   const renderMediaContent = (msg) => {
     const { mediaType, mediaId, mediaExtra, mediaMime, media } = msg
 
-    // Para mensajes en tiempo real via WebSocket
     const type = mediaType || media?.type
     const id = mediaId || media?.id
     const mime = mediaMime || media?.mime
@@ -409,7 +477,29 @@ export default function Conversations() {
       <div className="w-96 bg-white border-r border-gray-200 flex flex-col">
         {/* Header */}
         <div className="p-4 border-b border-gray-200">
-          <h2 className="text-xl font-bold text-gray-800 mb-4">Conversaciones</h2>
+          <h2 className="text-xl font-bold text-gray-800 mb-3">Conversaciones</h2>
+
+          {/* Filter Tabs */}
+          <div className="flex gap-1 mb-3 overflow-x-auto">
+            {visibleTabs.map(tab => {
+              const Icon = tab.icon
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveFilter(tab.key)}
+                  className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition ${
+                    activeFilter === tab.key
+                      ? 'bg-green-100 text-green-700 ring-1 ring-green-300'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {tab.label}
+                </button>
+              )
+            })}
+          </div>
+
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
@@ -457,14 +547,41 @@ export default function Conversations() {
                   <p className="text-sm text-gray-500 truncate">
                     {conv.last_message || 'Sin mensajes'}
                   </p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    {conv.last_message_time
-                      ? formatDistanceToNow(new Date(conv.last_message_time), {
-                          addSuffix: true,
-                          locale: es
-                        })
-                      : ''}
-                  </p>
+                  {/* Assignment badges */}
+                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                    {conv.department_name && (
+                      <span
+                        className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                        style={{
+                          backgroundColor: (conv.department_color || '#6b7280') + '20',
+                          color: conv.department_color || '#6b7280'
+                        }}
+                      >
+                        <Building2 className="w-2.5 h-2.5" />
+                        {conv.department_name}
+                      </span>
+                    )}
+                    {conv.agent_name && (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium">
+                        <User className="w-2.5 h-2.5" />
+                        {conv.agent_name}
+                      </span>
+                    )}
+                    {!conv.agent_name && !conv.department_name && conv.escalation_status === 'ESCALATED' && (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-yellow-50 text-yellow-600 font-medium">
+                        <Inbox className="w-2.5 h-2.5" />
+                        Sin asignar
+                      </span>
+                    )}
+                    <span className="text-xs text-gray-400">
+                      {conv.last_message_time
+                        ? formatDistanceToNow(new Date(conv.last_message_time), {
+                            addSuffix: true,
+                            locale: es
+                          })
+                        : ''}
+                    </span>
+                  </div>
                 </div>
               </button>
             ))
@@ -495,25 +612,85 @@ export default function Conversations() {
                   <p className="font-medium text-gray-800">
                     {selectedConv?.contact_name || selectedPhone}
                   </p>
-                  <p className="text-sm text-gray-500 flex items-center gap-1">
-                    <Phone className="w-3 h-3" />
-                    {selectedPhone}
-                  </p>
+                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <span className="flex items-center gap-1">
+                      <Phone className="w-3 h-3" />
+                      {selectedPhone}
+                    </span>
+                    {selectedConv?.department_name && (
+                      <span
+                        className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                        style={{
+                          backgroundColor: (selectedConv.department_color || '#6b7280') + '20',
+                          color: selectedConv.department_color || '#6b7280'
+                        }}
+                      >
+                        <Building2 className="w-2.5 h-2.5" />
+                        {selectedConv.department_name}
+                      </span>
+                    )}
+                    {selectedConv?.agent_name && (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium">
+                        <User className="w-2.5 h-2.5" />
+                        {selectedConv.agent_name}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
-              {/* Indicador de conexión WebSocket */}
-              <div className="text-sm">
-                {connected ? (
-                  <span className="text-green-600 flex items-center gap-1">
-                    <span className="w-2 h-2 bg-green-600 rounded-full"></span>
-                    Tiempo real
-                  </span>
-                ) : (
-                  <span className="text-yellow-600 flex items-center gap-1">
-                    <span className="w-2 h-2 bg-yellow-600 rounded-full"></span>
-                    Reconectando...
-                  </span>
+
+              {/* Actions */}
+              <div className="flex items-center gap-2">
+                {/* Self-assign button */}
+                {selectedConv?.session_id && (!selectedConv.assigned_agent_id || selectedConv.assigned_agent_id !== agent?.id) && (
+                  <button
+                    onClick={handleSelfAssign}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs bg-green-50 text-green-700 hover:bg-green-100 rounded-lg transition"
+                    title="Tomar este chat"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    Tomar
+                  </button>
                 )}
+
+                {/* Assign button */}
+                {selectedConv?.session_id && (isSupervisor || selectedConv.assigned_agent_id === agent?.id) && (
+                  <button
+                    onClick={() => setShowAssignModal(true)}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg transition"
+                    title="Asignar chat"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    Asignar
+                  </button>
+                )}
+
+                {/* Transfer button */}
+                {selectedConv?.session_id && (isSupervisor || selectedConv.assigned_agent_id === agent?.id) && (
+                  <button
+                    onClick={() => setShowTransferModal(true)}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg transition"
+                    title="Transferir chat"
+                  >
+                    <ArrowRightLeft className="w-3.5 h-3.5" />
+                    Transferir
+                  </button>
+                )}
+
+                {/* Indicador de conexión WebSocket */}
+                <div className="text-sm">
+                  {connected ? (
+                    <span className="text-green-600 flex items-center gap-1">
+                      <span className="w-2 h-2 bg-green-600 rounded-full"></span>
+                      Tiempo real
+                    </span>
+                  ) : (
+                    <span className="text-yellow-600 flex items-center gap-1">
+                      <span className="w-2 h-2 bg-yellow-600 rounded-full"></span>
+                      Reconectando...
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -543,13 +720,10 @@ export default function Conversations() {
                         Bot
                       </div>
                     )}
-                    {/* Renderizar contenido multimedia si existe */}
                     {renderMediaContent(msg)}
-                    {/* Texto del mensaje (caption o texto normal) */}
                     {(msg.body || msg.content) && (!msg.mediaType || msg.mediaType === 'reaction') && (
                       <p className="whitespace-pre-wrap">{msg.body || msg.content}</p>
                     )}
-                    {/* Caption para media con texto */}
                     {msg.mediaType && msg.mediaType !== 'reaction' && (msg.mediaCaption || msg.body) && (
                       <p className="whitespace-pre-wrap mt-2 text-sm">{msg.mediaCaption || msg.body}</p>
                     )}
@@ -599,6 +773,27 @@ export default function Conversations() {
           </>
         )}
       </div>
+
+      {/* Modals */}
+      {showAssignModal && selectedConv?.session_id && (
+        <AssignModal
+          sessionId={selectedConv.session_id}
+          currentAgentId={selectedConv.assigned_agent_id}
+          currentDepartmentId={selectedConv.assigned_department_id}
+          onClose={() => setShowAssignModal(false)}
+          onAssigned={() => loadConversations()}
+        />
+      )}
+
+      {showTransferModal && selectedConv?.session_id && (
+        <TransferModal
+          sessionId={selectedConv.session_id}
+          currentAgentId={selectedConv.assigned_agent_id}
+          currentDepartmentId={selectedConv.assigned_department_id}
+          onClose={() => setShowTransferModal(false)}
+          onTransferred={() => loadConversations()}
+        />
+      )}
     </div>
   )
 }

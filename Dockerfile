@@ -14,4 +14,5 @@ RUN mkdir -p logs
 
 EXPOSE 3001
 
-CMD ["node", "--dns-result-order=ipv4first", "app-cloud.js"]
+# Usar CMD con sh -c para ejecutar migraciones antes de iniciar
+CMD ["sh", "-c", "node scripts/auto-migrate.js && node --dns-result-order=ipv4first app-cloud.js"]

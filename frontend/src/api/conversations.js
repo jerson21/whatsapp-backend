@@ -4,12 +4,16 @@ const getHeaders = () => {
   const token = useAuthStore.getState().token
   return {
     'Content-Type': 'application/json',
-    ...(token ? { 'Authorization': `Basic ${token}` } : {})
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
   }
 }
 
-export async function fetchConversations() {
-  const res = await fetch('/api/chat/conversations', {
+export async function fetchConversations(filter, departmentId) {
+  const params = new URLSearchParams()
+  if (filter) params.set('filter', filter)
+  if (departmentId) params.set('departmentId', departmentId)
+  const qs = params.toString()
+  const res = await fetch(`/api/chat/conversations${qs ? '?' + qs : ''}`, {
     headers: getHeaders()
   })
   if (!res.ok) throw new Error('Error loading conversations')

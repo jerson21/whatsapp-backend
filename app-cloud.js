@@ -86,6 +86,29 @@ const RAG_TOP_K = Math.max(1, Math.min(10, Number(process.env.RAG_TOP_K || 3)));
 const ORCH_ENABLED = String(process.env.ORCH_ENABLED || 'false').toLowerCase() === 'true';
 const ORCH_BOOT_MODE = String(process.env.ORCH_BOOT_MODE || 'off'); // off|replace|tee
 
+/* ========= Agent Auth (JWT + bcrypt) ========= */
+const bcrypt = require('bcryptjs');
+const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+const JWT_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 horas
+
+function signJWT(payload) {
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const body = Buffer.from(JSON.stringify({ ...payload, iat: Date.now(), exp: Date.now() + JWT_EXPIRY_MS })).toString('base64url');
+  const signature = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
+  return `${header}.${body}.${signature}`;
+}
+
+function verifyJWT(token) {
+  const parts = token.split('.');
+  if (parts.length !== 3) throw new Error('Invalid JWT format');
+  const [header, body, signature] = parts;
+  const expected = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
+  if (signature !== expected) throw new Error('Invalid signature');
+  const payload = JSON.parse(Buffer.from(body, 'base64url').toString());
+  if (payload.exp < Date.now()) throw new Error('Token expired');
+  return payload;
+}
+
 /* ========= CORS Middleware ========= */
 const corsMw = cors({
   origin: (origin, cb) => {
@@ -95,7 +118,7 @@ const corsMw = cors({
     return cb(new Error('Not allowed by CORS: ' + origin));
   },
   methods: ['GET','POST','PUT','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization'],
+  allowedHeaders: ['Content-Type','Authorization','X-API-Key'],
   credentials: true,  // ✅ Cambiado a true para soportar credentials
   maxAge: 86400,
   optionsSuccessStatus: 204
@@ -842,32 +865,254 @@ function normalizePhoneCL(raw) {
   return digits;
 }
 
-/* ========= Auth Panel ========= */
-function panelAuth(req, res, next) {
-  if (!PANEL_USER) return next();
+/* ========= Auth Panel (dual-mode: JWT + Basic + API Key + legacy env) ========= */
+async function panelAuth(req, res, next) {
   const hdr = req.headers.authorization || '';
-  // 1) Header Basic
+
+  // 1) Bearer JWT (nuevo sistema de agentes)
+  if (hdr.startsWith('Bearer ')) {
+    try {
+      const payload = verifyJWT(hdr.slice(7));
+      req.agent = { id: payload.id, username: payload.username, role: payload.role, departmentId: payload.departmentId, name: payload.name };
+      return next();
+    } catch {
+      return res.status(401).json({ ok: false, error: 'Token inválido o expirado' });
+    }
+  }
+
+  // 2) Basic Auth → validar contra DB agents, luego fallback env vars
   if (hdr.startsWith('Basic ')) {
-    const [user, pass] = Buffer.from(hdr.slice(6), 'base64').toString().split(':');
-    if (user === PANEL_USER && pass === PANEL_PASS) return next();
+    const decoded = Buffer.from(hdr.slice(6), 'base64').toString();
+    const colonIdx = decoded.indexOf(':');
+    if (colonIdx === -1) {
+      res.set('WWW-Authenticate', 'Basic realm="panel"');
+      return res.status(401).send('Unauthorized');
+    }
+    const user = decoded.slice(0, colonIdx);
+    const pass = decoded.slice(colonIdx + 1);
+
+    // 2a) Verificar en tabla agents
+    try {
+      const [agents] = await pool.query(
+        'SELECT id, username, password_hash, name, role, department_id, avatar_color FROM agents WHERE username=? AND status="active"',
+        [user]
+      );
+      if (agents.length) {
+        const agent = agents[0];
+        const valid = await bcrypt.compare(pass, agent.password_hash);
+        if (valid) {
+          req.agent = { id: agent.id, username: agent.username, role: agent.role, departmentId: agent.department_id, name: agent.name };
+          return next();
+        }
+      }
+    } catch (e) {
+      logger.warn({ err: e.message }, 'DB auth check failed, fallback to env vars');
+    }
+
+    // 2b) Fallback: env var auth (legacy)
+    if (PANEL_USER && user === PANEL_USER && pass === PANEL_PASS) {
+      req.agent = { id: 0, username: PANEL_USER, role: 'supervisor', departmentId: null, name: 'Admin' };
+      return next();
+    }
+
+    // 2c) Sin PANEL_USER configurado: permitir cualquier Basic auth (compatibilidad anterior)
+    if (!PANEL_USER) {
+      req.agent = { id: 0, username: user || 'anonymous', role: 'supervisor', departmentId: null, name: user || 'Anonymous' };
+      return next();
+    }
+
     res.set('WWW-Authenticate', 'Basic realm="panel"');
     return res.status(401).send('Unauthorized');
   }
-  // 2) Query auth fallback (EventSource no puede enviar headers)
+
+  // 3) API Key (para API externa)
+  const apiKey = req.headers['x-api-key'] || req.query.apiKey;
+  if (apiKey) {
+    try {
+      const [agents] = await pool.query(
+        'SELECT id, username, name, role, department_id FROM agents WHERE api_key=? AND status="active"',
+        [apiKey]
+      );
+      if (agents.length) {
+        const agent = agents[0];
+        req.agent = { id: agent.id, username: agent.username, role: agent.role, departmentId: agent.department_id, name: agent.name, isApiKey: true };
+        return next();
+      }
+    } catch (e) {
+      logger.warn({ err: e.message }, 'API key auth check failed');
+    }
+    return res.status(401).json({ ok: false, error: 'API key inválida' });
+  }
+
+  // 4) Query auth fallback (EventSource no puede enviar headers)
   const qAuth = req.query.auth ? String(req.query.auth) : null;
-  const qU = req.query.u ? String(req.query.u) : null;
-  const qP = req.query.p ? String(req.query.p) : null;
   if (qAuth) {
     try {
-      const [user, pass] = Buffer.from(qAuth, 'base64').toString().split(':');
-      if (user === PANEL_USER && pass === PANEL_PASS) return next();
+      // Intentar como JWT
+      const payload = verifyJWT(qAuth);
+      req.agent = { id: payload.id, username: payload.username, role: payload.role, departmentId: payload.departmentId, name: payload.name };
+      return next();
     } catch {}
-  } else if (qU || qP) {
-    if (qU === PANEL_USER && qP === PANEL_PASS) return next();
+    // Intentar como Basic base64
+    try {
+      const decoded = Buffer.from(qAuth, 'base64').toString();
+      const colonIdx = decoded.indexOf(':');
+      if (colonIdx !== -1) {
+        const user = decoded.slice(0, colonIdx);
+        const pass = decoded.slice(colonIdx + 1);
+        if (PANEL_USER && user === PANEL_USER && pass === PANEL_PASS) {
+          req.agent = { id: 0, username: PANEL_USER, role: 'supervisor', departmentId: null, name: 'Admin' };
+          return next();
+        }
+        if (!PANEL_USER) {
+          req.agent = { id: 0, username: user || 'anonymous', role: 'supervisor', departmentId: null, name: user || 'Anonymous' };
+          return next();
+        }
+      }
+    } catch {}
   }
+  const qU = req.query.u ? String(req.query.u) : null;
+  const qP = req.query.p ? String(req.query.p) : null;
+  if (qU || qP) {
+    if (PANEL_USER && qU === PANEL_USER && qP === PANEL_PASS) {
+      req.agent = { id: 0, username: PANEL_USER, role: 'supervisor', departmentId: null, name: 'Admin' };
+      return next();
+    }
+    if (!PANEL_USER) {
+      req.agent = { id: 0, username: qU || 'anonymous', role: 'supervisor', departmentId: null, name: qU || 'Anonymous' };
+      return next();
+    }
+  }
+
   res.set('WWW-Authenticate', 'Basic realm="panel"');
   return res.status(401).send('Auth required');
 }
+
+// Middleware: solo supervisores
+function supervisorOnly(req, res, next) {
+  if (req.agent?.role !== 'supervisor') {
+    return res.status(403).json({ ok: false, error: 'Solo supervisores pueden realizar esta acción' });
+  }
+  next();
+}
+
+/* ========= Auto-Assignment by Intent ========= */
+async function autoAssignDepartment(sessionId, intent) {
+  try {
+    if (!intent) intent = 'general';
+    // Buscar departamento cuyo auto_assign_intents contenga el intent
+    const [depts] = await pool.query(
+      "SELECT id, name, display_name FROM departments WHERE active=TRUE AND JSON_CONTAINS(auto_assign_intents, ?, '$')",
+      [JSON.stringify(intent)]
+    );
+
+    let deptId;
+    let deptName;
+    if (depts.length > 0) {
+      deptId = depts[0].id;
+      deptName = depts[0].display_name;
+    } else {
+      // Fallback: departamento 'general'
+      const [[generalDept]] = await pool.query("SELECT id, display_name FROM departments WHERE name='general' AND active=TRUE");
+      if (generalDept) {
+        deptId = generalDept.id;
+        deptName = generalDept.display_name;
+      }
+    }
+
+    if (deptId) {
+      await pool.query(
+        "UPDATE chat_sessions SET assigned_department_id=?, assigned_at=NOW(), assignment_type='auto' WHERE id=?",
+        [deptId, sessionId]
+      );
+
+      if (global.io) {
+        const [[session]] = await pool.query('SELECT phone FROM chat_sessions WHERE id=?', [sessionId]);
+        global.io.of('/chat').to(`department_${deptId}`).emit('chat_assigned', {
+          sessionId, departmentId: deptId, departmentName: deptName,
+          assignmentType: 'auto', phone: session?.phone, timestamp: Date.now()
+        });
+        global.io.of('/chat').to('dashboard_all').emit('chat_assigned', {
+          sessionId, departmentId: deptId, departmentName: deptName,
+          assignmentType: 'auto', phone: session?.phone, timestamp: Date.now()
+        });
+      }
+
+      logger.info({ sessionId, intent, departmentId: deptId, deptName }, 'Auto-asignado a departamento');
+      return { id: deptId, name: deptName };
+    }
+    return null;
+  } catch (e) {
+    logger.error({ err: e, sessionId, intent }, 'Error en auto-asignación de departamento');
+    return null;
+  }
+}
+
+/* ========= Auth Endpoints ========= */
+// POST /api/auth/login - Login de agentes
+app.post('/api/auth/login', express.json(), async (req, res) => {
+  try {
+    const { username, password } = req.body || {};
+    if (!username || !password) return res.status(400).json({ ok: false, error: 'Faltan credenciales' });
+
+    // 1) Verificar en tabla agents
+    try {
+      const [agents] = await pool.query(
+        'SELECT id, username, password_hash, name, email, role, department_id, avatar_color, status FROM agents WHERE username=? AND status="active"',
+        [username]
+      );
+      if (agents.length) {
+        const agent = agents[0];
+        const valid = await bcrypt.compare(password, agent.password_hash);
+        if (!valid) return res.status(401).json({ ok: false, error: 'Credenciales inválidas' });
+
+        await pool.query('UPDATE agents SET last_login=NOW() WHERE id=?', [agent.id]);
+
+        const token = signJWT({ id: agent.id, username: agent.username, role: agent.role, departmentId: agent.department_id, name: agent.name });
+        const basicToken = Buffer.from(`${username}:${password}`).toString('base64');
+
+        return res.json({
+          ok: true,
+          token,
+          basicToken,
+          agent: {
+            id: agent.id,
+            username: agent.username,
+            name: agent.name,
+            email: agent.email,
+            role: agent.role,
+            departmentId: agent.department_id,
+            avatarColor: agent.avatar_color
+          }
+        });
+      }
+    } catch (e) {
+      logger.warn({ err: e.message }, 'DB login check failed, trying env vars');
+    }
+
+    // 2) Fallback: env var auth (legacy)
+    if (PANEL_USER && username === PANEL_USER && password === PANEL_PASS) {
+      const token = signJWT({ id: 0, username: PANEL_USER, role: 'supervisor', departmentId: null, name: 'Administrador' });
+      const basicToken = Buffer.from(`${username}:${password}`).toString('base64');
+      return res.json({
+        ok: true,
+        token,
+        basicToken,
+        agent: { id: 0, username: PANEL_USER, name: 'Administrador', email: null, role: 'supervisor', departmentId: null, avatarColor: '#22c55e' }
+      });
+    }
+
+    return res.status(401).json({ ok: false, error: 'Credenciales inválidas' });
+  } catch (e) {
+    logger.error({ err: e }, 'Login error');
+    res.status(500).json({ ok: false, error: 'Error interno' });
+  }
+});
+
+// GET /api/auth/me - Info del agente actual
+app.get('/api/auth/me', panelAuth, (req, res) => {
+  res.json({ ok: true, agent: req.agent });
+});
 
 // === Helper: info de media (url temporal + mime) ===
 async function getMediaInfo(mediaId) {
@@ -3531,6 +3776,19 @@ app.use('/api/flow-analytics', flowAnalyticsRoutes(pool));
 const flowMonitorRoutes = require('./api/flow-monitor-routes')(pool);
 app.use('/api/flow-monitor', flowMonitorRoutes.router);
 
+/* ========= API: Agents & Departments ========= */
+const agentsRoutes = require('./api/agents-routes');
+app.use('/api/agents', panelAuth, supervisorOnly, agentsRoutes(pool));
+
+const departmentsRoutes = require('./api/departments-routes');
+app.use('/api/departments', panelAuth, departmentsRoutes(pool, supervisorOnly));
+
+const assignmentRoutes = require('./api/assignment-routes');
+app.use('/api/chat', panelAuth, assignmentRoutes(pool));
+
+const externalApiRoutes = require('./api/external-api-routes');
+app.use('/api/external', panelAuth, externalApiRoutes(pool, sendTextViaCloudAPI));
+
 // Chequeo de presencia (no disponible en Cloud API)
 app.get('/api/chat/check-presence', async (req, res) => {
   try {
@@ -3545,6 +3803,38 @@ app.get('/api/chat/check-presence', async (req, res) => {
 // Obtener lista de conversaciones
 app.get('/api/chat/conversations', async (req, res) => {
   try {
+    const { filter, departmentId } = req.query;
+    const agentId = req.agent?.id;
+    const agentRole = req.agent?.role;
+    const agentDeptId = req.agent?.departmentId;
+
+    let whereExtra = '';
+    const params = [];
+
+    if (filter === 'mine' && agentId) {
+      whereExtra = ' AND s.assigned_agent_id = ?';
+      params.push(agentId);
+    } else if (filter === 'department') {
+      const deptId = departmentId || agentDeptId;
+      if (deptId) {
+        whereExtra = ' AND s.assigned_department_id = ?';
+        params.push(deptId);
+      }
+    } else if (filter === 'unassigned') {
+      whereExtra = ' AND s.assigned_agent_id IS NULL';
+    } else if (filter === 'all') {
+      // supervisor ve todo, agente ve su depto + propios
+      if (agentRole !== 'supervisor' && agentId) {
+        whereExtra = ' AND (s.assigned_agent_id = ? OR s.assigned_department_id = ?)';
+        params.push(agentId, agentDeptId || 0);
+      }
+    }
+    // sin filter: supervisor ve todo, agente ve lo accesible
+    if (!filter && agentRole !== 'supervisor' && agentId) {
+      whereExtra = ' AND (s.assigned_agent_id = ? OR s.assigned_department_id = ? OR s.assigned_agent_id IS NULL)';
+      params.push(agentId, agentDeptId || 0);
+    }
+
     const [conversations] = await pool.query(`
       SELECT
         s.id,
@@ -3556,6 +3846,13 @@ app.get('/api/chat/conversations', async (req, res) => {
         s.business_name,
         s.status,
         s.created_at,
+        s.assigned_agent_id,
+        s.assigned_department_id,
+        s.assignment_type,
+        a.name as agent_name,
+        a.avatar_color as agent_color,
+        d.display_name as department_name,
+        d.color as department_color,
         (SELECT text FROM chat_messages
          WHERE session_id = s.id
          ORDER BY id DESC LIMIT 1) as last_message,
@@ -3585,11 +3882,12 @@ app.get('/api/chat/conversations', async (req, res) => {
         cc.assigned_by as categorized_by
       FROM chat_sessions s
       LEFT JOIN chat_categories cc ON s.id = cc.session_id
-      WHERE s.status = 'OPEN'
+      LEFT JOIN agents a ON s.assigned_agent_id = a.id
+      LEFT JOIN departments d ON s.assigned_department_id = d.id
+      WHERE s.status = 'OPEN' ${whereExtra}
       ORDER BY last_message_time DESC
-    `);
+    `, params);
 
-    // Mapear el resultado para incluir sessionId junto con id
     const conversationsWithSessionId = conversations.map(conv => ({
       ...conv,
       sessionId: conv.id,
@@ -5091,12 +5389,27 @@ chatNamespace.use(async (socket, next) => {
   const { sessionId, token, dashboardToken } = socket.handshake.auth;
 
   // Modo dashboard: un solo socket para todo el panel
-  // Si tiene dashboardToken es porque ya pasó el login HTTP exitosamente
   if (dashboardToken) {
+    // 1) Intentar JWT (nuevo sistema de agentes)
+    try {
+      const payload = verifyJWT(dashboardToken);
+      socket.isDashboard = true;
+      socket.agentId = payload.id;
+      socket.agentRole = payload.role;
+      socket.agentName = payload.name;
+      socket.departmentId = payload.departmentId;
+      return next();
+    } catch {}
+
+    // 2) Fallback: Basic auth token (legacy)
     try {
       const decoded = Buffer.from(dashboardToken, 'base64').toString();
       if (decoded.includes(':')) {
         socket.isDashboard = true;
+        socket.agentId = 0;
+        socket.agentRole = 'supervisor';
+        socket.agentName = 'Admin';
+        socket.departmentId = null;
         return next();
       }
     } catch {}
@@ -5126,14 +5439,50 @@ chatNamespace.use(async (socket, next) => {
   }
 });
 
+// Presencia de agentes en tiempo real
+const agentPresence = new Map(); // agentId -> { socketId, name, connectedAt }
+global.agentPresence = agentPresence;
+
 chatNamespace.on('connection', (socket) => {
   // Modo dashboard: un solo socket recibe TODO
   if (socket.isDashboard) {
     socket.join('dashboard_all');
-    logger.info({ socketId: socket.id }, 'Dashboard socket conectado');
+
+    // Room del agente específico
+    if (socket.agentId) {
+      socket.join(`agent_${socket.agentId}`);
+    }
+
+    // Room del departamento del agente
+    if (socket.departmentId) {
+      socket.join(`department_${socket.departmentId}`);
+    }
+
+    // Supervisores se unen a todos los rooms de departamento
+    if (socket.agentRole === 'supervisor') {
+      pool.query('SELECT id FROM departments WHERE active=TRUE').then(([depts]) => {
+        depts.forEach(d => socket.join(`department_${d.id}`));
+      }).catch(() => {});
+    }
+
+    // Registrar presencia
+    if (socket.agentId) {
+      agentPresence.set(socket.agentId, { socketId: socket.id, name: socket.agentName, connectedAt: Date.now() });
+      chatNamespace.to('dashboard_all').emit('agent_status_change', {
+        agentId: socket.agentId, agentName: socket.agentName, status: 'online', timestamp: Date.now()
+      });
+    }
+
+    logger.info({ socketId: socket.id, agentId: socket.agentId, role: socket.agentRole }, 'Dashboard socket conectado');
 
     socket.on('disconnect', () => {
-      logger.info({ socketId: socket.id }, 'Dashboard socket desconectado');
+      if (socket.agentId) {
+        agentPresence.delete(socket.agentId);
+        chatNamespace.to('dashboard_all').emit('agent_status_change', {
+          agentId: socket.agentId, agentName: socket.agentName, status: 'offline', timestamp: Date.now()
+        });
+      }
+      logger.info({ socketId: socket.id, agentId: socket.agentId }, 'Dashboard socket desconectado');
     });
     return;
   }

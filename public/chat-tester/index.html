@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat Tester - Simulador General</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      width: 100%;
+      max-width: 900px;
+      height: 90vh;
+      max-height: 700px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .header h1 {
+      font-size: 24px;
+      font-weight: 600;
+    }
+
+    .header .phone-display {
+      background: rgba(255,255,255,0.2);
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+    }
+
+    .config-bar {
+      background: #f7fafc;
+      padding: 15px 30px;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      gap: 15px;
+      align-items: center;
+    }
+
+    .config-bar input {
+      flex: 1;
+      padding: 10px 15px;
+      border: 2px solid #cbd5e0;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+
+    .config-bar input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .config-bar button {
+      padding: 10px 20px;
+      background: #48bb78;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+
+    .config-bar button:hover {
+      background: #38a169;
+      transform: translateY(-1px);
+    }
+
+    .messages-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 30px;
+      background: #f7fafc;
+    }
+
+    .message {
+      margin-bottom: 15px;
+      display: flex;
+      animation: slideIn 0.3s ease-out;
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .message.user {
+      justify-content: flex-end;
+    }
+
+    .message.bot {
+      justify-content: flex-start;
+    }
+
+    .message.system {
+      justify-content: center;
+    }
+
+    .message-bubble {
+      max-width: 70%;
+      padding: 12px 18px;
+      border-radius: 18px;
+      word-wrap: break-word;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+
+    .message.user .message-bubble {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+
+    .message.bot .message-bubble {
+      background: white;
+      color: #2d3748;
+      border-bottom-left-radius: 4px;
+      border: 1px solid #e2e8f0;
+    }
+
+    .message.system .message-bubble {
+      background: #edf2f7;
+      color: #718096;
+      font-size: 13px;
+      border-radius: 12px;
+      padding: 8px 14px;
+    }
+
+    .message-meta {
+      font-size: 11px;
+      margin-top: 5px;
+      opacity: 0.7;
+    }
+
+    .typing-indicator {
+      display: flex;
+      gap: 4px;
+      padding: 12px 18px;
+      background: white;
+      border-radius: 18px;
+      border-bottom-left-radius: 4px;
+      width: fit-content;
+      border: 1px solid #e2e8f0;
+    }
+
+    .typing-indicator span {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #cbd5e0;
+      animation: typing 1.4s infinite;
+    }
+
+    .typing-indicator span:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+
+    .typing-indicator span:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+
+    @keyframes typing {
+      0%, 60%, 100% {
+        transform: translateY(0);
+        opacity: 0.7;
+      }
+      30% {
+        transform: translateY(-10px);
+        opacity: 1;
+      }
+    }
+
+    .input-container {
+      padding: 20px 30px;
+      background: white;
+      border-top: 1px solid #e2e8f0;
+      display: flex;
+      gap: 15px;
+      align-items: center;
+    }
+
+    .input-container input {
+      flex: 1;
+      padding: 14px 18px;
+      border: 2px solid #e2e8f0;
+      border-radius: 25px;
+      font-size: 15px;
+      transition: all 0.2s;
+    }
+
+    .input-container input:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .send-btn {
+      width: 50px;
+      height: 50px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border: none;
+      border-radius: 50%;
+      color: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+
+    .send-btn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    .send-btn:active {
+      transform: scale(0.95);
+    }
+
+    .send-btn svg {
+      width: 24px;
+      height: 24px;
+    }
+
+    .stats {
+      display: flex;
+      gap: 20px;
+      padding: 10px 0;
+      font-size: 12px;
+      color: #718096;
+    }
+
+    .stat-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .status-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #48bb78;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.5;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🤖 Chat Tester</h1>
+      <div class="phone-display" id="phoneDisplay">+56912345678</div>
+    </div>
+
+    <div class="config-bar">
+      <input
+        type="text"
+        id="phoneInput"
+        placeholder="Número de teléfono (ej: +56912345678)"
+        value="+56912345678"
+      />
+      <button onclick="updatePhone()">Actualizar Número</button>
+      <button onclick="clearChat()" style="background: #f56565;">Limpiar Chat</button>
+    </div>
+
+    <div class="stats">
+      <div class="stat-item">
+        <div class="status-indicator"></div>
+        <span>Conectado</span>
+      </div>
+      <div class="stat-item">
+        <span>Mensajes: <strong id="msgCount">0</strong></span>
+      </div>
+      <div class="stat-item">
+        <span>Sesión: <strong id="sessionId">-</strong></span>
+      </div>
+    </div>
+
+    <div class="messages-container" id="messagesContainer">
+      <div class="message system">
+        <div class="message-bubble">
+          ✨ Simulador listo. Escribe un mensaje para empezar a probar el chatbot completo.
+        </div>
+      </div>
+      <div class="message system">
+        <div class="message-bubble">
+          💡 Esto simula exactamente como si llegara un mensaje real de WhatsApp/Instagram
+        </div>
+      </div>
+    </div>
+
+    <div class="input-container">
+      <input
+        type="text"
+        id="messageInput"
+        placeholder="Escribe un mensaje..."
+        onkeypress="handleKeyPress(event)"
+      />
+      <button class="send-btn" onclick="sendMessage()">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = 'http://localhost:3001';
+    let currentPhone = '+56912345678';
+    let currentSessionId = null;
+    let messageCount = 0;
+    let eventSource = null;
+
+    // Actualizar número de teléfono
+    function updatePhone() {
+      const input = document.getElementById('phoneInput');
+      currentPhone = input.value.trim();
+      document.getElementById('phoneDisplay').textContent = currentPhone;
+      addSystemMessage(`📱 Número actualizado: ${currentPhone}`);
+
+      // Cerrar conexión SSE anterior si existe
+      if (eventSource) {
+        eventSource.close();
+      }
+
+      currentSessionId = null;
+      document.getElementById('sessionId').textContent = '-';
+    }
+
+    // Limpiar chat
+    function clearChat() {
+      document.getElementById('messagesContainer').innerHTML = '';
+      messageCount = 0;
+      document.getElementById('msgCount').textContent = '0';
+      addSystemMessage('🧹 Chat limpiado');
+    }
+
+    // Manejar Enter para enviar
+    function handleKeyPress(event) {
+      if (event.key === 'Enter') {
+        sendMessage();
+      }
+    }
+
+    // Agregar mensaje del usuario
+    function addUserMessage(text) {
+      const container = document.getElementById('messagesContainer');
+      const msgDiv = document.createElement('div');
+      msgDiv.className = 'message user';
+      msgDiv.innerHTML = `
+        <div class="message-bubble">
+          ${escapeHtml(text)}
+          <div class="message-meta">${new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</div>
+        </div>
+      `;
+      container.appendChild(msgDiv);
+      scrollToBottom();
+      messageCount++;
+      document.getElementById('msgCount').textContent = messageCount;
+    }
+
+    // Agregar mensaje del bot
+    function addBotMessage(text) {
+      const container = document.getElementById('messagesContainer');
+      const msgDiv = document.createElement('div');
+      msgDiv.className = 'message bot';
+      msgDiv.innerHTML = `
+        <div class="message-bubble">
+          ${formatMessage(text)}
+          <div class="message-meta">${new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</div>
+        </div>
+      `;
+      container.appendChild(msgDiv);
+      scrollToBottom();
+      messageCount++;
+      document.getElementById('msgCount').textContent = messageCount;
+    }
+
+    // Agregar mensaje del sistema
+    function addSystemMessage(text) {
+      const container = document.getElementById('messagesContainer');
+      const msgDiv = document.createElement('div');
+      msgDiv.className = 'message system';
+      msgDiv.innerHTML = `
+        <div class="message-bubble">${escapeHtml(text)}</div>
+      `;
+      container.appendChild(msgDiv);
+      scrollToBottom();
+    }
+
+    // Mostrar indicador de escritura
+    function showTyping() {
+      const container = document.getElementById('messagesContainer');
+      const typingDiv = document.createElement('div');
+      typingDiv.className = 'message bot';
+      typingDiv.id = 'typing-indicator';
+      typingDiv.innerHTML = `
+        <div class="typing-indicator">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      `;
+      container.appendChild(typingDiv);
+      scrollToBottom();
+    }
+
+    // Ocultar indicador de escritura
+    function hideTyping() {
+      const typing = document.getElementById('typing-indicator');
+      if (typing) typing.remove();
+    }
+
+    // Enviar mensaje
+    async function sendMessage() {
+      const input = document.getElementById('messageInput');
+      const text = input.value.trim();
+
+      if (!text) return;
+
+      // Mostrar mensaje del usuario
+      addUserMessage(text);
+      input.value = '';
+
+      // Mostrar typing
+      showTyping();
+
+      try {
+        // Simular mensaje entrante usando el endpoint de simulación
+        const response = await fetch(`${API_BASE}/api/chat/simulate`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            phone: currentPhone,
+            message: text
+          })
+        });
+
+        const data = await response.json();
+
+        hideTyping();
+
+        if (data.ok) {
+          // Actualizar sessionId si es nuevo
+          if (data.sessionId && !currentSessionId) {
+            currentSessionId = data.sessionId;
+            document.getElementById('sessionId').textContent = data.sessionId;
+          }
+
+          // Mostrar respuestas del bot
+          if (data.responses && data.responses.length > 0) {
+            for (const msg of data.responses) {
+              await delay(500); // Simular delay entre mensajes
+              addBotMessage(msg);
+            }
+          } else if (data.message) {
+            addBotMessage(data.message);
+          }
+
+          // Mostrar info adicional si hay
+          if (data.flowExecuted) {
+            addSystemMessage(`⚡ Flujo ejecutado: ${data.flowName || 'N/A'}`);
+          }
+        } else {
+          addSystemMessage(`❌ Error: ${data.error || 'Error desconocido'}`);
+        }
+      } catch (error) {
+        hideTyping();
+        addSystemMessage(`❌ Error de conexión: ${error.message}`);
+        console.error('Error:', error);
+      }
+    }
+
+    // Formatear mensaje (preservar saltos de línea, negritas, etc.)
+    function formatMessage(text) {
+      let formatted = escapeHtml(text);
+
+      // Convertir **texto** a negrita
+      formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+      // Convertir saltos de línea
+      formatted = formatted.replace(/\n/g, '<br>');
+
+      return formatted;
+    }
+
+    // Escape HTML
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Scroll to bottom
+    function scrollToBottom() {
+      const container = document.getElementById('messagesContainer');
+      container.scrollTop = container.scrollHeight;
+    }
+
+    // Delay helper
+    function delay(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // Inicializar
+    document.getElementById('messageInput').focus();
+  </script>
+</body>
+</html>

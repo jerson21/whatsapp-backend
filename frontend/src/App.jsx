@@ -10,10 +10,18 @@ import FlowLogs from './pages/FlowLogs'
 import Leads from './pages/Leads'
 import Analytics from './pages/Analytics'
 import FlowMonitor from './pages/FlowMonitor'
+import AgentManagement from './pages/AgentManagement'
+import DepartmentManagement from './pages/DepartmentManagement'
 
 function PrivateRoute({ children }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   return isAuthenticated ? children : <Navigate to="/login" replace />
+}
+
+function SupervisorRoute({ children }) {
+  const agent = useAuthStore((state) => state.agent)
+  if (agent?.role !== 'supervisor') return <Navigate to="/dashboard" replace />
+  return children
 }
 
 export default function App() {
@@ -34,12 +42,14 @@ export default function App() {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="conversations" element={<Conversations />} />
-        <Route path="flows" element={<FlowsManager />} />
-        <Route path="flows/builder/:id?" element={<FlowBuilder />} />
-        <Route path="logs" element={<FlowLogs />} />
-        <Route path="leads" element={<Leads />} />
-        <Route path="analytics" element={<Analytics />} />
-        <Route path="monitor" element={<FlowMonitor />} />
+        <Route path="agents" element={<SupervisorRoute><AgentManagement /></SupervisorRoute>} />
+        <Route path="departments" element={<SupervisorRoute><DepartmentManagement /></SupervisorRoute>} />
+        <Route path="flows" element={<SupervisorRoute><FlowsManager /></SupervisorRoute>} />
+        <Route path="flows/builder/:id?" element={<SupervisorRoute><FlowBuilder /></SupervisorRoute>} />
+        <Route path="logs" element={<SupervisorRoute><FlowLogs /></SupervisorRoute>} />
+        <Route path="leads" element={<SupervisorRoute><Leads /></SupervisorRoute>} />
+        <Route path="analytics" element={<SupervisorRoute><Analytics /></SupervisorRoute>} />
+        <Route path="monitor" element={<SupervisorRoute><FlowMonitor /></SupervisorRoute>} />
       </Route>
 
       {/* Fallback */}

@@ -43,7 +43,7 @@ services:
       - DB_NAME=whatsapp_chat
       - LOG_LEVEL=debug
       - VISUAL_FLOWS_ENABLED=true
-      - CHATBOT_GLOBAL_ENABLED=false
+      - CHATBOT_GLOBAL_ENABLED=true
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     depends_on:

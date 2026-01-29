@@ -18,8 +18,8 @@ export default function Login() {
     setLoading(true)
 
     try {
-      const { user, token } = await apiLogin(username, password)
-      login(user, token)
+      const { agent, token, basicToken } = await apiLogin(username, password)
+      login(agent, token, basicToken)
       navigate('/dashboard')
     } catch (err) {
       setError(err.message || 'Error al iniciar sesión')

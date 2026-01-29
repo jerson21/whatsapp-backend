@@ -1,27 +1,27 @@
 export async function login(username, password) {
-  const token = btoa(`${username}:${password}`)
-
-  // Verificar credenciales probando un endpoint protegido
-  const res = await fetch('/api/chatbot/stats', {
-    headers: {
-      'Authorization': `Basic ${token}`
-    }
+  const res = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
   })
 
   if (!res.ok) {
-    throw new Error('Credenciales inválidas')
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.error || 'Credenciales inválidas')
   }
 
+  const data = await res.json()
   return {
-    user: { username },
-    token
+    agent: data.agent,
+    token: data.token,
+    basicToken: data.basicToken
   }
 }
 
 export async function verifyToken(token) {
-  const res = await fetch('/api/chatbot/stats', {
+  const res = await fetch('/api/auth/me', {
     headers: {
-      'Authorization': `Basic ${token}`
+      'Authorization': `Bearer ${token}`
     }
   })
 
