@@ -28,7 +28,8 @@ import {
   ArrowRightLeft,
   Building2,
   Inbox,
-  Filter
+  Filter,
+  Trash2
 } from 'lucide-react'
 import { useSocket } from '../hooks/useSocket'
 import AssignModal from '../components/AssignModal'
@@ -260,6 +261,33 @@ export default function Conversations() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
+    }
+  }
+
+  const handleDeleteConversation = async () => {
+    if (!selectedConv) return
+    const sessionId = selectedConv.session_id || selectedConv.sessionId || selectedConv.id
+    if (!confirm(`¿Eliminar conversación con ${selectedConv.contact_name || selectedConv.phone}? Se borrarán todos los mensajes.`)) return
+    const token = useAuthStore.getState().token
+    try {
+      const res = await fetch(`/api/chat/conversations/${sessionId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        }
+      })
+      const data = await res.json()
+      if (data.ok) {
+        setSelectedPhone(null)
+        setMessages([])
+        loadConversations()
+      } else {
+        alert(data.error || 'Error al eliminar')
+      }
+    } catch (err) {
+      console.error('Error deleting conversation:', err)
+      alert('Error al eliminar conversación')
     }
   }
 
@@ -683,6 +711,18 @@ export default function Conversations() {
                   >
                     <ArrowRightLeft className="w-4 h-4" />
                     Transferir
+                  </button>
+                )}
+
+                {/* Delete button - supervisor only */}
+                {selectedConv && isSupervisor && (
+                  <button
+                    onClick={handleDeleteConversation}
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100 rounded-lg border border-red-200 transition"
+                    title="Eliminar conversación"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Eliminar
                   </button>
                 )}
 

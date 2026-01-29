@@ -70,6 +70,13 @@ const CHATBOT_GLOBAL_ENABLED_ENV = String(process.env.CHATBOT_GLOBAL_ENABLED || 
 const CHATBOT_AUTO_ENABLE_NEW_SESSIONS = String(process.env.CHATBOT_AUTO || 'false').toLowerCase() === 'true';
 let chatbotGlobalEnabled = CHATBOT_GLOBAL_ENABLED_ENV;
 
+// Modo prueba: si CHATBOT_TEST_PHONES está definido, el bot SOLO responde a esos números
+// Formato: lista separada por comas, ej: "56912345678,56987654321"
+const CHATBOT_TEST_PHONES_RAW = process.env.CHATBOT_TEST_PHONES || '';
+const chatbotTestPhones = new Set(
+  CHATBOT_TEST_PHONES_RAW.split(',').map(p => p.trim()).filter(Boolean)
+);
+
 // Intent/routing & external actions (feature flags)
 const INTENT_DETECT_ENABLED = String(process.env.INTENT_DETECT_ENABLED || 'true').toLowerCase() === 'true';
 const INTENT_MIN_CONFIDENCE = Math.max(0, Math.min(1, Number(process.env.INTENT_MIN_CONFIDENCE || 0.6)));
@@ -1768,7 +1775,11 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               }
             } else {
               const token = randomToken(24);
-              const enableForNew = CHATBOT_AUTO_ENABLE_NEW_SESSIONS || chatbotGlobalEnabled;
+              const baseEnable = CHATBOT_AUTO_ENABLE_NEW_SESSIONS || chatbotGlobalEnabled;
+              // En modo prueba, solo habilitar bot para teléfonos de prueba
+              const enableForNew = (chatbotTestPhones.size > 0)
+                ? (baseEnable && chatbotTestPhones.has(from))
+                : baseEnable;
 
               // 🐛 DEBUG LOG TEMPORAL para nueva sesión
               logger.info({
@@ -1776,6 +1787,8 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                 channel,
                 CHATBOT_AUTO_ENABLE_NEW_SESSIONS,
                 chatbotGlobalEnabled,
+                testMode: chatbotTestPhones.size > 0,
+                isTestPhone: chatbotTestPhones.has(from),
                 enableForNew,
               }, '🆕 DEBUG: Creando nueva sesión');
 
@@ -1945,8 +1958,14 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
             // Chatbot (manual/assisted/automatic) si corresponde
             // MODIFICADO: También procesar si hay interactiveId (botones de plantillas)
+            // Si hay teléfonos de prueba configurados, solo activar bot para esos números
+            const isTestMode = chatbotTestPhones.size > 0;
+            const isTestPhone = isTestMode && chatbotTestPhones.has(from);
+            const botEnabledForThis = isTestMode
+              ? isTestPhone && (chatbotGlobalEnabled || sessionChatbotEnabled)
+              : (chatbotGlobalEnabled || sessionChatbotEnabled);
             const shouldRunBot = Boolean(
-              (textForDB || interactiveId) && (chatbotGlobalEnabled || sessionChatbotEnabled) && (!handledByOrchestrator || ORCH_BOOT_MODE === 'tee')
+              (textForDB || interactiveId) && botEnabledForThis && (!handledByOrchestrator || ORCH_BOOT_MODE === 'tee')
             );
             
             // 🐛 DEBUG LOGS TEMPORALES
@@ -4638,6 +4657,22 @@ app.put('/api/chatbot/config', async (req, res) => {
     logger.error({ e }, 'PUT /api/chatbot/config error');
     res.status(500).json({ ok: false, error: e.message });
   }
+});
+
+// Gestionar teléfonos de prueba del chatbot (runtime, sin reiniciar)
+app.get('/api/chatbot/test-phones', (req, res) => {
+  res.json({ ok: true, phones: Array.from(chatbotTestPhones), testMode: chatbotTestPhones.size > 0 });
+});
+
+app.put('/api/chatbot/test-phones', express.json(), (req, res) => {
+  const { phones } = req.body || {};
+  if (!Array.isArray(phones)) {
+    return res.status(400).json({ ok: false, error: 'phones debe ser un array de strings' });
+  }
+  chatbotTestPhones.clear();
+  phones.filter(p => typeof p === 'string' && p.trim()).forEach(p => chatbotTestPhones.add(p.trim()));
+  logger.info({ phones: Array.from(chatbotTestPhones) }, 'Teléfonos de prueba actualizados');
+  res.json({ ok: true, phones: Array.from(chatbotTestPhones), testMode: chatbotTestPhones.size > 0 });
 });
 
 // Listar intenciones del chatbot
