@@ -2117,7 +2117,19 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             const msgText = echo.message?.text || '';
             const msgId = echo.message?.mid || `echo_${Date.now()}`;
 
-            if (!recipientId || !msgText) continue;
+            // Extraer media de attachments (fotos, videos, audio enviados desde la app)
+            let echoMediaType = null;
+            let echoMediaId = null;
+            if (echo.message?.attachments?.length) {
+              const att = echo.message.attachments[0];
+              if (att.type === 'image' || att.type === 'video' || att.type === 'audio' || att.type === 'file') {
+                echoMediaType = att.type === 'file' ? 'document' : att.type;
+                echoMediaId = att.payload?.url || null;
+              }
+            }
+
+            // Descartar solo si no tiene ni texto ni media
+            if (!recipientId || (!msgText && !echoMediaType)) continue;
 
             // Buscar sesión abierta para este usuario
             const [sessRows] = await pool.query(
@@ -2142,21 +2154,37 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               continue;
             }
 
-            // Insertar como mensaje saliente
-            const [ins] = await pool.query(
-              `INSERT INTO chat_messages (session_id, direction, text, wa_jid, wa_msg_id, status, channel)
-               VALUES (?, 'out', ?, ?, ?, 'sent', ?)`,
-              [echoSessionId, msgText, recipientId, msgId, channel]
-            );
+            // Insertar como mensaje saliente (con media si aplica)
+            let echoDbId;
+            if (echoMediaType && echoMediaId) {
+              const [ins] = await pool.query(
+                `INSERT INTO chat_messages (session_id, direction, text, wa_jid, wa_msg_id, status, channel,
+                  media_type, media_id, media_caption)
+                 VALUES (?, 'out', ?, ?, ?, 'sent', ?, ?, ?, ?)`,
+                [echoSessionId, msgText || '', recipientId, msgId, channel,
+                 echoMediaType, echoMediaId, msgText || null]
+              );
+              echoDbId = ins.insertId;
+            } else {
+              const [ins] = await pool.query(
+                `INSERT INTO chat_messages (session_id, direction, text, wa_jid, wa_msg_id, status, channel)
+                 VALUES (?, 'out', ?, ?, ?, 'sent', ?)`,
+                [echoSessionId, msgText, recipientId, msgId, channel]
+              );
+              echoDbId = ins.insertId;
+            }
 
-            const echoDbId = ins.insertId;
-            logger.info({ sessionId: echoSessionId, mid: msgId, dbId: echoDbId, channel }, '📤 Echo message saved as outgoing');
+            logger.info({ sessionId: echoSessionId, mid: msgId, dbId: echoDbId, channel, mediaType: echoMediaType }, '📤 Echo message saved as outgoing');
+
+            // Construir payload de media para notificación
+            const echoMediaForNotif = echoMediaType ? { type: echoMediaType, id: echoMediaId } : null;
 
             // Notificar al panel via SSE
             ssePush(echoSessionId, {
               type: 'message',
               direction: 'out',
               text: msgText,
+              media: echoMediaForNotif,
               msgId,
               dbId: echoDbId,
               status: 'sent',
@@ -2171,6 +2199,8 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                 text: msgText,
                 phone: recipientId,
                 sessionId: echoSessionId,
+                media: echoMediaForNotif,
+                mediaId: echoMediaId,
                 msgId,
                 dbId: echoDbId,
                 status: 'sent',
