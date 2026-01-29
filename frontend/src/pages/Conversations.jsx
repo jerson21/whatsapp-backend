@@ -96,9 +96,13 @@ export default function Conversations() {
             media: data.media
           }]
         })
+
+        // Marcar como leído inmediatamente (estamos viendo este chat)
+        markAsRead(data.phone).then(() => loadConversations())
+        return
       }
 
-      // Siempre actualizar la lista lateral (último mensaje, badge, etc.)
+      // Actualizar la lista lateral (otro chat recibió mensaje)
       loadConversations()
     })
 
