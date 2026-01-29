@@ -1708,7 +1708,14 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     const signatureHeader = req.headers['x-hub-signature-256'];
 
     if (!verifyMetaSignature(rawBody, signatureHeader)) {
-      logger.warn('Firma Meta inválida');
+      logger.warn({
+        hasSignature: !!signatureHeader,
+        signaturePreview: signatureHeader?.substring(0, 20),
+        bodyLength: rawBody?.length,
+        bodyPreview: rawBody?.substring(0, 100),
+        hasAppSecret: !!META_APP_SECRET,
+        contentType: req.headers['content-type']
+      }, 'Firma Meta inválida');
       return res.sendStatus(403);
     }
 
