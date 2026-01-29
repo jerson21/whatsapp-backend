@@ -997,54 +997,124 @@ function supervisorOnly(req, res, next) {
 }
 
 /* ========= Auto-Assignment by Intent ========= */
-async function autoAssignDepartment(sessionId, intent) {
+async function autoAssignDepartment(sessionId, intent, explicitDeptId = null) {
   try {
-    if (!intent) intent = 'general';
-    // Buscar departamento cuyo auto_assign_intents contenga el intent
-    const [depts] = await pool.query(
-      "SELECT id, name, display_name FROM departments WHERE active=TRUE AND JSON_CONTAINS(auto_assign_intents, ?, '$')",
-      [JSON.stringify(intent)]
-    );
+    let deptId = explicitDeptId || null;
+    let deptName = null;
 
-    let deptId;
-    let deptName;
-    if (depts.length > 0) {
-      deptId = depts[0].id;
-      deptName = depts[0].display_name;
+    if (deptId) {
+      // Departamento explícito (desde nodo Transfer del flow)
+      const [[dept]] = await pool.query("SELECT display_name FROM departments WHERE id=? AND active=TRUE", [deptId]);
+      deptName = dept?.display_name || 'Desconocido';
     } else {
-      // Fallback: departamento 'general'
-      const [[generalDept]] = await pool.query("SELECT id, display_name FROM departments WHERE name='general' AND active=TRUE");
-      if (generalDept) {
-        deptId = generalDept.id;
-        deptName = generalDept.display_name;
+      // Buscar departamento por intent
+      if (!intent) intent = 'general';
+      const [depts] = await pool.query(
+        "SELECT id, name, display_name FROM departments WHERE active=TRUE AND JSON_CONTAINS(auto_assign_intents, ?, '$')",
+        [JSON.stringify(intent)]
+      );
+
+      if (depts.length > 0) {
+        deptId = depts[0].id;
+        deptName = depts[0].display_name;
+      } else {
+        // Fallback: departamento 'general'
+        const [[generalDept]] = await pool.query("SELECT id, display_name FROM departments WHERE name='general' AND active=TRUE");
+        if (generalDept) {
+          deptId = generalDept.id;
+          deptName = generalDept.display_name;
+        }
       }
     }
 
     if (deptId) {
+      // 1) Asignar departamento
       await pool.query(
         "UPDATE chat_sessions SET assigned_department_id=?, assigned_at=NOW(), assignment_type='auto' WHERE id=?",
         [deptId, sessionId]
       );
 
-      if (global.io) {
-        const [[session]] = await pool.query('SELECT phone FROM chat_sessions WHERE id=?', [sessionId]);
-        global.io.of('/chat').to(`department_${deptId}`).emit('chat_assigned', {
-          sessionId, departmentId: deptId, departmentName: deptName,
-          assignmentType: 'auto', phone: session?.phone, timestamp: Date.now()
-        });
-        global.io.of('/chat').to('dashboard_all').emit('chat_assigned', {
-          sessionId, departmentId: deptId, departmentName: deptName,
-          assignmentType: 'auto', phone: session?.phone, timestamp: Date.now()
-        });
+      // 2) Auto-asignar agente menos ocupado del departamento
+      let assignedAgent = null;
+      try {
+        assignedAgent = await findLeastBusyAgent(deptId);
+        if (assignedAgent) {
+          await pool.query(
+            "UPDATE chat_sessions SET assigned_agent_id=?, assigned_at=NOW() WHERE id=?",
+            [assignedAgent.id, sessionId]
+          );
+          logger.info({ sessionId, agentId: assignedAgent.id, agentName: assignedAgent.name },
+            'Auto-asignado agente (menos ocupado)');
+        }
+      } catch (agentErr) {
+        logger.warn({ err: agentErr, sessionId, deptId }, 'Error auto-asignando agente, queda solo departamento');
       }
 
-      logger.info({ sessionId, intent, departmentId: deptId, deptName }, 'Auto-asignado a departamento');
-      return { id: deptId, name: deptName };
+      // 3) Notificar via Socket.IO
+      if (global.io) {
+        const [[session]] = await pool.query('SELECT phone FROM chat_sessions WHERE id=?', [sessionId]);
+        const payload = {
+          sessionId, departmentId: deptId, departmentName: deptName,
+          agentId: assignedAgent?.id || null, agentName: assignedAgent?.name || null,
+          assignmentType: 'auto', phone: session?.phone, timestamp: Date.now()
+        };
+        global.io.of('/chat').to(`department_${deptId}`).emit('chat_assigned', payload);
+        global.io.of('/chat').to('dashboard_all').emit('chat_assigned', payload);
+        if (assignedAgent) {
+          global.io.of('/chat').to(`agent_${assignedAgent.id}`).emit('chat_assigned', payload);
+        }
+      }
+
+      logger.info({ sessionId, intent, departmentId: deptId, deptName, agentId: assignedAgent?.id }, 'Auto-asignado a departamento y agente');
+      return { id: deptId, name: deptName, agentId: assignedAgent?.id, agentName: assignedAgent?.name };
     }
     return null;
   } catch (e) {
     logger.error({ err: e, sessionId, intent }, 'Error en auto-asignación de departamento');
     return null;
+  }
+}
+
+/* ========= Auto-Assign Least Busy Agent ========= */
+async function findLeastBusyAgent(departmentId) {
+  try {
+    // Contar chats activos (con actividad en últimas 24h) por agente del departamento
+    const [agents] = await pool.query(`
+      SELECT
+        a.id AS agent_id,
+        a.name AS agent_name,
+        COUNT(cs.id) AS active_chat_count
+      FROM agents a
+      LEFT JOIN chat_sessions cs
+        ON cs.assigned_agent_id = a.id
+        AND cs.status = 'OPEN'
+        AND cs.updated_at >= NOW() - INTERVAL 24 HOUR
+      WHERE a.department_id = ?
+        AND a.status = 'active'
+      GROUP BY a.id, a.name
+      ORDER BY active_chat_count ASC,
+               COALESCE(a.last_login, '1970-01-01') DESC
+    `, [departmentId]);
+
+    if (!agents.length) return null;
+
+    // Nivel 1: Preferir agentes online (conectados al dashboard)
+    const onlineAgents = agents.filter(a => global.agentPresence && global.agentPresence.has(a.agent_id));
+    if (onlineAgents.length > 0) {
+      const chosen = onlineAgents[0];
+      logger.info({ agentId: chosen.agent_id, agentName: chosen.agent_name, activeChats: chosen.active_chat_count, tier: 'online' },
+        'Agente menos ocupado seleccionado (online)');
+      return { id: chosen.agent_id, name: chosen.agent_name };
+    }
+
+    // Nivel 2: Cualquier agente activo del departamento (aunque esté offline)
+    const chosen = agents[0];
+    logger.info({ agentId: chosen.agent_id, agentName: chosen.agent_name, activeChats: chosen.active_chat_count, tier: 'offline' },
+      'Agente menos ocupado seleccionado (offline)');
+    return { id: chosen.agent_id, name: chosen.agent_name };
+  } catch (e) {
+    logger.error({ err: e, departmentId }, 'Error buscando agente menos ocupado');
+    return null; // Nivel 3: Sin agente, queda solo departamento
   }
 }
 
@@ -5357,7 +5427,8 @@ const { registerRoutes, handleChatbotMessage, setSessionMode, reloadVisualFlows 
   sendTextViaCloudAPI,
   sendInteractiveButtons,
   sendInteractiveList,
-  emitFlowEvent: flowMonitorRoutes.emitFlowEvent
+  emitFlowEvent: flowMonitorRoutes.emitFlowEvent,
+  autoAssignDepartment
 });
 registerRoutes(app, panelAuth);
 

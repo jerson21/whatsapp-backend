@@ -10,7 +10,7 @@
 const VisualFlowEngine = require('./visual-flow-engine');
 const MessageClassifier = require('./message-classifier');
 
-function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInteractiveButtons, sendInteractiveList, emitFlowEvent }) {
+function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInteractiveButtons, sendInteractiveList, emitFlowEvent, autoAssignDepartment }) {
   // Configuración
   const CHATBOT_MODE_DEFAULT = process.env.CHATBOT_MODE_DEFAULT || 'automatic';
   const CHATBOT_AUTO_REPLY_DELAY = Number(process.env.CHATBOT_AUTO_REPLY_DELAY || 1000);
@@ -139,37 +139,20 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
               // Cambiar a modo manual
               sessionModes.set(sessionIdNum, 'manual');
               await pool.query(`UPDATE chat_sessions SET chatbot_mode='manual', escalation_status='ESCALATED', escalated_at=NOW() WHERE id=?`, [sessionId]);
-              // Auto-asignar departamento
+              // Auto-asignar departamento + agente menos ocupado
               try {
-                const autoAssign = require('../app-cloud.js').autoAssignDepartment;
-                if (typeof autoAssign === 'function') {
-                  // Si el flow especificó departamento, usarlo
+                if (typeof autoAssignDepartment === 'function') {
                   if (flowResult.targetDepartmentId) {
-                    await pool.query("UPDATE chat_sessions SET assigned_department_id=?, assigned_at=NOW(), assignment_type='auto' WHERE id=?", [flowResult.targetDepartmentId, sessionId]);
+                    // Flow especificó departamento → asignar ese + agente
+                    await autoAssignDepartment(sessionId, null, flowResult.targetDepartmentId);
                   } else {
-                    // Usar intent de la sesión
+                    // Buscar departamento por intent + agente
                     const [[sess]] = await pool.query('SELECT last_intent FROM chat_sessions WHERE id=?', [sessionId]);
-                    await autoAssign(sessionId, sess?.last_intent || 'general');
+                    await autoAssignDepartment(sessionId, sess?.last_intent || 'general');
                   }
                 }
               } catch (e) {
-                // autoAssignDepartment puede no estar disponible aún (circular dep)
-                // Intentar directamente con SQL
-                try {
-                  const [[sess]] = await pool.query('SELECT last_intent FROM chat_sessions WHERE id=?', [sessionId]);
-                  const intent = sess?.last_intent || 'general';
-                  const [depts] = await pool.query(
-                    "SELECT id FROM departments WHERE active=TRUE AND JSON_CONTAINS(auto_assign_intents, ?, '$')",
-                    [JSON.stringify(intent)]
-                  );
-                  const deptId = depts.length ? depts[0].id : null;
-                  if (deptId) {
-                    await pool.query("UPDATE chat_sessions SET assigned_department_id=?, assigned_at=NOW(), assignment_type='auto' WHERE id=?", [deptId, sessionId]);
-                  } else {
-                    const [[gen]] = await pool.query("SELECT id FROM departments WHERE name='general' AND active=TRUE");
-                    if (gen) await pool.query("UPDATE chat_sessions SET assigned_department_id=?, assigned_at=NOW(), assignment_type='auto' WHERE id=?", [gen.id, sessionId]);
-                  }
-                } catch {}
+                logger.error({ err: e, sessionId }, 'Error en auto-asignación desde chatbot');
               }
               return;
 
