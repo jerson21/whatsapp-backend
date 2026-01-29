@@ -129,6 +129,7 @@ export default function Conversations() {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [search, setSearch] = useState('')
+  const [channelFilter, setChannelFilter] = useState('all') // 'all' | 'whatsapp' | 'instagram' | 'messenger'
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [showTransferModal, setShowTransferModal] = useState(false)
   const messagesEndRef = useRef(null)
@@ -363,10 +364,15 @@ export default function Conversations() {
     }
   }
 
-  const filteredConversations = conversations.filter(conv =>
-    (conv.contact_name?.toLowerCase() || '').includes(search.toLowerCase()) ||
-    conv.phone.includes(search)
-  )
+  const filteredConversations = conversations.filter(conv => {
+    // Filtro de texto (búsqueda)
+    const matchesSearch = (conv.contact_name?.toLowerCase() || '').includes(search.toLowerCase()) ||
+      conv.phone.includes(search)
+    // Filtro de canal
+    const convChannel = conv.channel || 'whatsapp'
+    const matchesChannel = channelFilter === 'all' || convChannel === channelFilter
+    return matchesSearch && matchesChannel
+  })
 
   const selectedConv = conversations.find(c => c.phone === selectedPhone)
 
@@ -590,6 +596,34 @@ export default function Conversations() {
             })}
           </div>
 
+          {/* Channel Filter */}
+          <div className="flex gap-1 mb-3">
+            {[
+              { key: 'all', label: 'Todos', icon: null, color: 'gray' },
+              { key: 'whatsapp', label: 'WhatsApp', icon: WhatsAppIcon, color: 'green' },
+              { key: 'instagram', label: 'Instagram', icon: InstagramIcon, color: 'pink' },
+            ].map(ch => {
+              const Icon = ch.icon
+              const isActive = channelFilter === ch.key
+              return (
+                <button
+                  key={ch.key}
+                  onClick={() => setChannelFilter(ch.key)}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                    isActive
+                      ? ch.key === 'whatsapp' ? 'bg-green-50 text-green-700 border-green-200'
+                        : ch.key === 'instagram' ? 'bg-pink-50 text-pink-700 border-pink-200'
+                        : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                      : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  {Icon && <Icon className="w-3 h-3" />}
+                  {ch.label}
+                </button>
+              )
+            })}
+          </div>
+
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
@@ -597,7 +631,7 @@ export default function Conversations() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar conversación..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
+              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
             />
           </div>
         </div>
