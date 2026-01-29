@@ -26,6 +26,31 @@ import {
 } from 'lucide-react'
 import { useSocket } from '../hooks/useSocket'
 
+const AVATAR_COLORS = [
+  'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-pink-500',
+  'bg-indigo-500', 'bg-teal-500', 'bg-orange-500', 'bg-red-400',
+  'bg-cyan-500', 'bg-emerald-500'
+]
+
+function getAvatarColor(str) {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]
+}
+
+function getInitials(name, phone) {
+  if (name) {
+    const parts = name.trim().split(/\s+/)
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    }
+    return name[0].toUpperCase()
+  }
+  return phone.slice(-2)
+}
+
 export default function Conversations() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [conversations, setConversations] = useState([])
@@ -406,9 +431,9 @@ export default function Conversations() {
                   selectedPhone === conv.phone ? 'bg-green-50' : ''
                 }`}
               >
-                <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <span className="text-green-600 font-medium">
-                    {conv.contact_name?.[0]?.toUpperCase() || conv.phone.slice(-2)}
+                <div className={`w-12 h-12 ${getAvatarColor(conv.contact_name || conv.phone)} rounded-full flex items-center justify-center flex-shrink-0`}>
+                  <span className="text-white font-semibold text-sm">
+                    {getInitials(conv.contact_name, conv.phone)}
                   </span>
                 </div>
                 <div className="flex-1 min-w-0">
@@ -454,8 +479,10 @@ export default function Conversations() {
             {/* Header del chat */}
             <div className="bg-white border-b border-gray-200 p-4 flex items-center justify-between gap-4">
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                  <User className="w-5 h-5 text-green-600" />
+                <div className={`w-10 h-10 ${getAvatarColor(selectedConv?.contact_name || selectedPhone)} rounded-full flex items-center justify-center`}>
+                  <span className="text-white font-semibold text-sm">
+                    {getInitials(selectedConv?.contact_name, selectedPhone)}
+                  </span>
                 </div>
                 <div>
                   <p className="font-medium text-gray-800">
@@ -531,7 +558,7 @@ export default function Conversations() {
                         <span className="ml-1">
                           {msg.status === 'sent' && '✓'}
                           {msg.status === 'delivered' && '✓✓'}
-                          {msg.status === 'read' && <span className="text-blue-200">✓✓</span>}
+                          {msg.status === 'read' && <span className="text-blue-400">✓✓</span>}
                         </span>
                       )}
                     </div>

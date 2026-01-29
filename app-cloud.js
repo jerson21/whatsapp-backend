@@ -1415,6 +1415,10 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             const waMsgId = normalized.messageId;
             const textForDB = normalized.text;
 
+            // Extraer nombre del contacto desde el webhook
+            const contacts = value.contacts || [];
+            const contactName = contacts[0]?.profile?.name || null;
+
             // Construir mediaFields desde el mensaje normalizado
             let mediaFields = null;
             if (normalized.mediaType) {
@@ -1432,7 +1436,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
             // Buscar/crear sesión activa (por phone + channel)
             const [rows] = await pool.query(
-              `SELECT id, chatbot_enabled, channel
+              `SELECT id, chatbot_enabled, channel, name
                  FROM chat_sessions
                 WHERE phone=? AND channel=? AND status='OPEN'
                 ORDER BY id DESC LIMIT 1`,
@@ -1443,6 +1447,10 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             if (rows.length) {
               sessionId = rows[0].id;
               sessionChatbotEnabled = !!rows[0].chatbot_enabled;
+              // Actualizar nombre del contacto si no estaba o cambió
+              if (contactName && rows[0].name !== contactName) {
+                await pool.query('UPDATE chat_sessions SET name = ? WHERE id = ?', [contactName, sessionId]);
+              }
             } else {
               const token = randomToken(24);
               const enableForNew = CHATBOT_AUTO_ENABLE_NEW_SESSIONS || chatbotGlobalEnabled;
@@ -1462,7 +1470,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               const [ins] = await pool.query(
                 `INSERT INTO chat_sessions (token, phone, name, status, chatbot_enabled, chatbot_mode, channel, channel_metadata)
                  VALUES (?,?,?, 'OPEN', ?, ?, ?, ?)`,
-                [token, from, null, enableForNew, enableForNew ? 'automatic' : 'manual', channel, channelMetadata]
+                [token, from, contactName, enableForNew, enableForNew ? 'automatic' : 'manual', channel, channelMetadata]
               );
               sessionId = ins.insertId;
               sessionChatbotEnabled = enableForNew;
