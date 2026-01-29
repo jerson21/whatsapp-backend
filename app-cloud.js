@@ -36,6 +36,8 @@ const { createFAQDatabase } = require('./faq/faq-database');
 const MessageClassifier = require('./chatbot/message-classifier');
 const queueService = require('./queues/queue-service');
 const BroadcastQueue = require('./queues/broadcast-queue');
+const ChannelDetector = require('./channels/channel-detector');
+const ChannelAdapters = require('./channels/channel-adapters');
 
 /* ========= Config ========= */
 const app = express();
@@ -140,6 +142,16 @@ app.get('/flow-builder*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'flow-builder', 'index.html'));
 });
 
+/* ========= Chat Tester - Simulador General ========= */
+// Servir archivos estáticos del Chat Tester
+app.use('/chat-tester', express.static(path.join(__dirname, 'public', 'chat-tester')));
+
+// Ruta principal del Chat Tester
+app.get('/chat-tester*', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, 'public', 'chat-tester', 'index.html'));
+});
+
 // Evitar error de favicon 404
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 
@@ -159,6 +171,9 @@ const pool = mysql.createPool({
   bigNumberStrings: true
 });
 const db = pool;
+
+/* ========= Channel Adapters (Multicanal) ========= */
+const channelAdapters = new ChannelAdapters({ logger, db });
 
 /* ========= FAQ Store (BM25 ligero) ========= */
 const faqStore = createFAQDatabase({ pool, logger });
@@ -609,6 +624,54 @@ app.get('/api/chat/media', async (req, res) => {
   }
 });
 
+// GET /api/chat/media/:mediaId
+// Ruta simplificada para el dashboard (requiere autenticación básica)
+// ============================
+app.get('/api/chat/media/:mediaId', async (req, res) => {
+  try {
+    const mediaId = req.params.mediaId;
+
+    if (!mediaId) {
+      return res.status(400).json({ ok: false, error: 'Falta mediaId' });
+    }
+
+    logger.info({ mediaId }, '📩 GET /api/chat/media/:mediaId');
+
+    // Descargar desde Graph API
+    const infoUrl = `https://graph.facebook.com/${GRAPH_API_VERSION}/${mediaId}`;
+    const r = await fetch(infoUrl, { headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}` } });
+    const infoText = await r.text();
+    let info;
+    try { info = JSON.parse(infoText); } catch { info = null; }
+
+    if (!r.ok || !info?.url) {
+      logger.warn({ status: r.status, info: info || infoText }, '⚠️ Media info no disponible');
+      return res.status(404).json({ ok: false, error: 'Media no disponible o expirada' });
+    }
+
+    logger.info({ downloadUrl: info.url }, '⬇️ Bajando media (stream)');
+    const r2 = await fetch(info.url, { headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}` } });
+    if (!r2.ok) {
+      const t = await r2.text();
+      logger.error({ status: r2.status, body: t }, '🔥 Error bajando media');
+      return res.status(400).json({ ok: false, error: 'Error descargando media de Meta' });
+    }
+
+    const ct = r2.headers.get('content-type') || 'application/octet-stream';
+    const len = r2.headers.get('content-length');
+    res.setHeader('Content-Type', ct);
+    if (len) res.setHeader('Content-Length', len);
+    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+
+    const nodeStream = Readable.fromWeb(r2.body);
+    nodeStream.on('error', (err) => { try { res.destroy(err); } catch {} });
+    nodeStream.pipe(res);
+  } catch (e) {
+    logger.error({ err: e.message }, '🔥 GET /api/chat/media/:mediaId FAIL');
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 
 /* Subir media (para imagen/audio/video/documento) 
  */
@@ -880,7 +943,42 @@ function inboxPush(payload) {
 }
 
 /* ========= Cloud API ========= */
-async function sendTextViaCloudAPI(toE164, body) {
+async function sendTextViaCloudAPI(toE164, body, sessionId = null) {
+  // 🌐 MULTICANAL: Si no hay credenciales, simular envío y guardar en BD (modo tester)
+  if (!META_ACCESS_TOKEN || !WABA_PHONE_NUMBER_ID) {
+    // Si no tenemos sessionId, intentar obtenerlo de la BD
+    if (!sessionId) {
+      try {
+        const [[row]] = await pool.query(
+          `SELECT id, channel FROM chat_sessions WHERE phone=? AND status='OPEN' ORDER BY id DESC LIMIT 1`,
+          [toE164]
+        );
+        if (row) sessionId = row.id;
+      } catch (e) {
+        logger.error({ error: e.message }, '❌ Error obteniendo sessionId');
+      }
+    }
+
+    logger.debug({ toE164, body: body?.slice(0, 50), sessionId }, '🧪 Simulando envío (sin credenciales WhatsApp)');
+    const simulatedId = `simulated_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // Guardar en BD si tenemos sessionId
+    if (sessionId) {
+      try {
+        const [result] = await pool.query(
+          `INSERT INTO chat_messages (session_id, direction, text, wa_jid, wa_msg_id, status, channel)
+           VALUES (?, 'out', ?, ?, ?, 'sent', 'tester')`,
+          [sessionId, body, toE164, simulatedId]
+        );
+        logger.debug({ sessionId, messageId: result.insertId }, '💾 Mensaje simulado guardado en BD');
+      } catch (e) {
+        logger.error({ error: e.message, sessionId }, '❌ Error guardando mensaje simulado');
+      }
+    }
+
+    return simulatedId;
+  }
+
   const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${WABA_PHONE_NUMBER_ID}/messages`;
   const r = await fetch(url, {
     method: 'POST',
@@ -936,7 +1034,46 @@ async function sendTemplateViaCloudAPI(toE164, templateName, languageCode, compo
  * @param {string} headerText - Texto opcional del header
  * @param {string} footerText - Texto opcional del footer
  */
-async function sendInteractiveButtons(toE164, bodyText, buttons, headerText = null, footerText = null) {
+async function sendInteractiveButtons(toE164, bodyText, buttons, headerText = null, footerText = null, sessionId = null) {
+  // 🌐 MULTICANAL: Si no hay credenciales, simular envío y guardar en BD (modo tester)
+  if (!META_ACCESS_TOKEN || !WABA_PHONE_NUMBER_ID) {
+    // Si no tenemos sessionId, intentar obtenerlo de la BD
+    if (!sessionId) {
+      try {
+        const [[row]] = await pool.query(
+          `SELECT id, channel FROM chat_sessions WHERE phone=? AND status='OPEN' ORDER BY id DESC LIMIT 1`,
+          [toE164]
+        );
+        if (row) sessionId = row.id;
+      } catch (e) {
+        logger.error({ error: e.message }, '❌ Error obteniendo sessionId');
+      }
+    }
+
+    logger.debug({ toE164, bodyText: bodyText?.slice(0, 50), buttons: buttons?.length, sessionId }, '🧪 Simulando envío de botones (sin credenciales WhatsApp)');
+    const simulatedId = `simulated_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // Guardar en BD si tenemos sessionId
+    if (sessionId) {
+      try {
+        // Formatear texto con botones para mostrar en el chat
+        const buttonsList = buttons.map((btn, idx) => `${idx + 1}. ${btn.title || btn.label}`).join('\n');
+        const fullText = `${bodyText}\n\n${buttonsList}`;
+
+        const [result] = await pool.query(
+          `INSERT INTO chat_messages (session_id, direction, text, wa_jid, wa_msg_id, status, channel)
+           VALUES (?, 'out', ?, ?, ?, 'sent', 'tester')`,
+          [sessionId, fullText, toE164, simulatedId]
+        );
+        logger.debug({ sessionId, messageId: result.insertId, buttonsCount: buttons.length }, '💾 Mensaje con botones simulado guardado en BD');
+      } catch (e) {
+        logger.error({ error: e.message, sessionId }, '❌ Error guardando mensaje con botones simulado');
+      }
+    }
+
+    return simulatedId;
+  }
+
   const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${WABA_PHONE_NUMBER_ID}/messages`;
 
   // WhatsApp permite máximo 3 botones
@@ -999,7 +1136,52 @@ async function sendInteractiveButtons(toE164, bodyText, buttons, headerText = nu
  * @param {string} headerText - Texto opcional del header
  * @param {string} footerText - Texto opcional del footer
  */
-async function sendInteractiveList(toE164, bodyText, buttonText, sections, headerText = null, footerText = null) {
+async function sendInteractiveList(toE164, bodyText, buttonText, sections, headerText = null, footerText = null, sessionId = null) {
+  // 🌐 MULTICANAL: Si no hay credenciales, simular envío y guardar en BD (modo tester)
+  if (!META_ACCESS_TOKEN || !WABA_PHONE_NUMBER_ID) {
+    // Si no tenemos sessionId, intentar obtenerlo de la BD
+    if (!sessionId) {
+      try {
+        const [[row]] = await pool.query(
+          `SELECT id, channel FROM chat_sessions WHERE phone=? AND status='OPEN' ORDER BY id DESC LIMIT 1`,
+          [toE164]
+        );
+        if (row) sessionId = row.id;
+      } catch (e) {
+        logger.error({ error: e.message }, '❌ Error obteniendo sessionId');
+      }
+    }
+
+    logger.debug({ toE164, bodyText: bodyText?.slice(0, 50), sections: sections?.length, sessionId }, '🧪 Simulando envío de lista (sin credenciales WhatsApp)');
+    const simulatedId = `simulated_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // Guardar en BD si tenemos sessionId
+    if (sessionId) {
+      try {
+        // Formatear texto con opciones de lista para mostrar en el chat
+        let fullText = bodyText;
+        sections.forEach((section, secIdx) => {
+          if (section.title) fullText += `\n\n${section.title}:`;
+          section.rows.forEach((row, rowIdx) => {
+            fullText += `\n${secIdx * 10 + rowIdx + 1}. ${row.title || row.label}`;
+            if (row.description) fullText += ` - ${row.description}`;
+          });
+        });
+
+        const [result] = await pool.query(
+          `INSERT INTO chat_messages (session_id, direction, text, wa_jid, wa_msg_id, status, channel)
+           VALUES (?, 'out', ?, ?, ?, 'sent', 'tester')`,
+          [sessionId, fullText, toE164, simulatedId]
+        );
+        logger.debug({ sessionId, messageId: result.insertId }, '💾 Mensaje con lista simulado guardado en BD');
+      } catch (e) {
+        logger.error({ error: e.message, sessionId }, '❌ Error guardando mensaje con lista simulado');
+      }
+    }
+
+    return simulatedId;
+  }
+
   const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${WABA_PHONE_NUMBER_ID}/messages`;
 
   // Formatear secciones
@@ -1209,6 +1391,11 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     }
 
     const body = rawBody ? JSON.parse(rawBody) : {};
+
+    // 🌐 MULTICANAL: Detectar de qué canal viene el mensaje
+    const channel = ChannelDetector.detectChannel(body, req.headers);
+    logger.info({ channel, object: body.object }, '🌐 Canal detectado');
+
     const entries = Array.isArray(body.entry) ? body.entry : [];
     if (!entries.length) return res.sendStatus(200);
 
@@ -1222,17 +1409,34 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         /* ===================== MENSAJES ENTRANTES ===================== */
         for (const m of messages) {
           try {
-            const from = m.from;     // E.164 sin '+'
-            const waMsgId = m.id;
-            const { textForDB, mediaFields } = extractIncomingMessage(m);
+            // 🌐 MULTICANAL: Normalizar mensaje según el canal
+            const normalized = ChannelDetector.normalizeMessage(m, channel);
+            const from = normalized.userId;
+            const waMsgId = normalized.messageId;
+            const textForDB = normalized.text;
 
-            // Buscar/crear sesión activa
+            // Construir mediaFields desde el mensaje normalizado
+            let mediaFields = null;
+            if (normalized.mediaType) {
+              mediaFields = {
+                media_type: normalized.mediaType,
+                media_id: normalized.mediaId,
+                media_mime: normalized.metadata?.mimeType || null,
+                media_size: normalized.metadata?.fileSize || null,
+                media_caption: textForDB || null,
+                media_extra: Object.keys(normalized.metadata || {}).length
+                  ? JSON.stringify(normalized.metadata)
+                  : null
+              };
+            }
+
+            // Buscar/crear sesión activa (por phone + channel)
             const [rows] = await pool.query(
-              `SELECT id, chatbot_enabled 
-                 FROM chat_sessions 
-                WHERE phone=? AND status='OPEN'
+              `SELECT id, chatbot_enabled, channel
+                 FROM chat_sessions
+                WHERE phone=? AND channel=? AND status='OPEN'
                 ORDER BY id DESC LIMIT 1`,
-              [from]
+              [from, channel]
             );
 
             let sessionId, sessionChatbotEnabled = false;
@@ -1242,19 +1446,23 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             } else {
               const token = randomToken(24);
               const enableForNew = CHATBOT_AUTO_ENABLE_NEW_SESSIONS || chatbotGlobalEnabled;
-              
+
               // 🐛 DEBUG LOG TEMPORAL para nueva sesión
               logger.info({
                 phone: from,
+                channel,
                 CHATBOT_AUTO_ENABLE_NEW_SESSIONS,
                 chatbotGlobalEnabled,
                 enableForNew,
               }, '🆕 DEBUG: Creando nueva sesión');
-              
+
+              // Guardar metadata del canal
+              const channelMetadata = normalized.metadata ? JSON.stringify(normalized.metadata) : null;
+
               const [ins] = await pool.query(
-                `INSERT INTO chat_sessions (token, phone, name, status, chatbot_enabled, chatbot_mode) 
-                 VALUES (?,?,?, 'OPEN', ?, ?)`,
-                [token, from, null, enableForNew, enableForNew ? 'automatic' : 'manual']
+                `INSERT INTO chat_sessions (token, phone, name, status, chatbot_enabled, chatbot_mode, channel, channel_metadata)
+                 VALUES (?,?,?, 'OPEN', ?, ?, ?, ?)`,
+                [token, from, null, enableForNew, enableForNew ? 'automatic' : 'manual', channel, channelMetadata]
               );
               sessionId = ins.insertId;
               sessionChatbotEnabled = enableForNew;
@@ -1270,13 +1478,13 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                 }
 
                 const [ins] = await pool.query(
-                  `INSERT INTO chat_messages 
-                     (session_id, direction, text, wa_jid, wa_msg_id, status,
+                  `INSERT INTO chat_messages
+                     (session_id, direction, text, wa_jid, wa_msg_id, status, channel,
                       media_type, media_id, media_mime, media_size, media_caption, media_extra)
-                   VALUES (?,?,?,?,?,?,
+                   VALUES (?,?,?,?,?,?,?,
                            ?,?,?,?,?,?)`,
                   [
-                    sessionId, 'in', textForDB || '', from, waMsgId, 'delivered',
+                    sessionId, 'in', textForDB || '', from, waMsgId, 'delivered', channel,
                     mediaFields.media_type,
                     mediaFields.media_id,
                     mediaFields.media_mime,
@@ -1288,10 +1496,10 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                 dbMessageId = ins.insertId;
               } else {
                 const [ins] = await pool.query(
-                  `INSERT INTO chat_messages 
-                     (session_id, direction, text, wa_jid, wa_msg_id, status)
-                   VALUES (?,?,?,?,?,?)`,
-                  [sessionId, 'in', textForDB || '', from, waMsgId, 'delivered']
+                  `INSERT INTO chat_messages
+                     (session_id, direction, text, wa_jid, wa_msg_id, status, channel)
+                   VALUES (?,?,?,?,?,?,?)`,
+                  [sessionId, 'in', textForDB || '', from, waMsgId, 'delivered', channel]
                 );
                 dbMessageId = ins.insertId;
               }
@@ -1301,11 +1509,23 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             }
 
             // Normalizar objeto media para el frontend (SSE)
+            let mediaExtraParsed = null;
+            if (mediaFields?.media_extra) {
+              try {
+                mediaExtraParsed = typeof mediaFields.media_extra === 'string'
+                  ? JSON.parse(mediaFields.media_extra)
+                  : mediaFields.media_extra;
+              } catch (e) {
+                mediaExtraParsed = null;
+              }
+            }
+
             const mediaForSSE = mediaFields ? {
-              type:    mediaFields.media_type,  // image|audio|video|document|sticker|location|contacts|interactive
+              type:    mediaFields.media_type,  // image|audio|video|document|sticker|location|contacts|reaction|flow_reply|order
               id:      mediaFields.media_id,    // -> /api/chat/media
               mime:    mediaFields.media_mime,
-              caption: mediaFields.media_caption
+              caption: mediaFields.media_caption,
+              extra:   mediaExtraParsed         // Datos adicionales (coordenadas, contactos, etc.)
             } : null;
 
             // Emitir a la UI
@@ -2100,6 +2320,145 @@ app.post('/api/chat/send', sendLimiter, async (req, res) => {
   } catch (e) {
     logger.error({ e }, 'POST /api/chat/send');
     res.status(400).json({ ok: false, error: e.message });
+  }
+});
+
+// ========================================
+// ENDPOINT DE SIMULACIÓN - Chat Tester
+// ========================================
+// Este endpoint simula un mensaje entrante como si llegara de WhatsApp/Instagram
+// Útil para probar el chatbot completo sin necesidad de credenciales reales
+// NOTA: La función handleChatbotMessage se inyecta después de createChatbot()
+let simulateMessageHandler = null;
+
+app.post('/api/chat/simulate', express.json(), async (req, res) => {
+  try {
+    const { phone, message } = req.body || {};
+
+    if (!phone || !message) {
+      return res.status(400).json({ ok: false, error: 'Se requieren phone y message' });
+    }
+
+    const normalizedPhone = phone.replace(/[^\d+]/g, ''); // Limpiar formato
+    const text = String(message).trim();
+
+    logger.info({ phone: normalizedPhone, text: text.slice(0, 50) }, '🧪 SIMULACIÓN: Mensaje entrante');
+
+    // 🌐 Simulador usa canal 'tester'
+    const channel = 'tester';
+
+    // Buscar o crear sesión (igual que en webhook, pero con channel='tester')
+    const [rows] = await pool.query(
+      `SELECT id, chatbot_enabled FROM chat_sessions WHERE phone=? AND channel=? AND status='OPEN' ORDER BY id DESC LIMIT 1`,
+      [normalizedPhone, channel]
+    );
+
+    let sessionId, sessionChatbotEnabled = false;
+    if (rows.length) {
+      sessionId = rows[0].id;
+      sessionChatbotEnabled = !!rows[0].chatbot_enabled;
+    } else {
+      // Crear nueva sesión con chatbot habilitado por defecto
+      const token = crypto.randomBytes(12).toString('hex');
+      const enableForNew = CHATBOT_AUTO_ENABLE_NEW_SESSIONS || chatbotGlobalEnabled;
+
+      logger.info({ phone: normalizedPhone, channel, enableForNew }, '🧪 SIMULACIÓN: Creando nueva sesión');
+
+      const [ins] = await pool.query(
+        `INSERT INTO chat_sessions (token, phone, name, status, chatbot_enabled, chatbot_mode, channel) VALUES (?,?,?, 'OPEN', ?, ?, ?)`,
+        [token, normalizedPhone, null, enableForNew, enableForNew ? 'automatic' : 'manual', channel]
+      );
+      sessionId = ins.insertId;
+      sessionChatbotEnabled = enableForNew;
+    }
+
+    // Insertar mensaje en BD (simular como mensaje entrante)
+    const simulatedWaMsgId = `sim_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const [msgResult] = await pool.query(
+      `INSERT INTO chat_messages (session_id, direction, text, wa_jid, wa_msg_id, status, channel) VALUES (?,?,?,?,?,?,?)`,
+      [sessionId, 'in', text, normalizedPhone, simulatedWaMsgId, 'delivered', channel]
+    );
+    const dbMessageId = msgResult.insertId;
+
+    // Emitir por SSE (para que se vea en el panel si está abierto)
+    ssePush(sessionId, {
+      type: 'message',
+      direction: 'in',
+      text,
+      msgId: simulatedWaMsgId,
+      dbId: dbMessageId,
+      status: 'delivered',
+      at: Date.now()
+    });
+
+    // Emitir por Socket.IO
+    if (global.io) {
+      global.io.of('/chat').to(`session_${sessionId}`).emit('new_message', {
+        type: 'message',
+        direction: 'in',
+        text,
+        msgId: simulatedWaMsgId,
+        dbId: dbMessageId,
+        status: 'delivered',
+        timestamp: Date.now()
+      });
+    }
+
+    // ========================================
+    // EJECUTAR CHATBOT (Visual Flow Engine)
+    // ========================================
+    let responses = [];
+    let flowExecuted = false;
+    let flowName = null;
+
+    if (chatbotGlobalEnabled && sessionChatbotEnabled && simulateMessageHandler) {
+      try {
+        logger.info({ sessionId, phone: normalizedPhone }, '🧪 SIMULACIÓN: Ejecutando chatbot');
+
+        // Ejecutar chatbot (igual que en webhook)
+        await simulateMessageHandler({
+          sessionId,
+          phone: normalizedPhone,
+          text,
+          buttonId: null
+        });
+
+        // Esperar un poco para que el chatbot procese y guarde las respuestas
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Obtener las últimas respuestas del bot de esta sesión
+        const [botMessages] = await pool.query(
+          `SELECT text FROM chat_messages
+           WHERE session_id = ? AND direction = 'out' AND id > ?
+           ORDER BY id ASC LIMIT 10`,
+          [sessionId, dbMessageId]
+        );
+
+        responses = botMessages.map(m => m.text);
+        flowExecuted = responses.length > 0;
+
+        logger.info({ sessionId, responseCount: responses.length }, '🧪 SIMULACIÓN: Chatbot ejecutado');
+      } catch (e) {
+        logger.error({ e }, '🧪 SIMULACIÓN: Error ejecutando chatbot');
+      }
+    } else {
+      logger.info({ sessionId, chatbotGlobalEnabled, sessionChatbotEnabled, hasHandler: !!simulateMessageHandler }, '🧪 SIMULACIÓN: Chatbot deshabilitado o no inicializado');
+    }
+
+    // Retornar resultado
+    return res.json({
+      ok: true,
+      sessionId,
+      messageId: dbMessageId,
+      responses,
+      flowExecuted,
+      flowName,
+      message: responses.length > 0 ? null : 'Mensaje recibido (chatbot no habilitado o sin respuestas)'
+    });
+
+  } catch (e) {
+    logger.error({ e }, '🧪 SIMULACIÓN: Error en /api/chat/simulate');
+    return res.status(500).json({ ok: false, error: e.message });
   }
 });
 
@@ -3338,7 +3697,8 @@ app.get('/api/chat/conversations/:phone', async (req, res) => {
 
     // Obtener todos los mensajes de la conversación
     const [messagesRows] = await pool.query(
-      `SELECT id, direction, text, created_at, status, wa_msg_id, is_ai_generated, media_type, media_id
+      `SELECT id, direction, text, created_at, status, wa_msg_id, is_ai_generated,
+              media_type, media_id, media_mime, media_caption, media_extra
        FROM chat_messages
        WHERE session_id = ?
        ORDER BY created_at ASC`,
@@ -3346,18 +3706,35 @@ app.get('/api/chat/conversations/:phone', async (req, res) => {
     );
 
     // Formatear mensajes para el frontend
-    const messages = messagesRows.map(msg => ({
-      id: msg.id,
-      direction: msg.direction === 'in' ? 'incoming' : 'outgoing',
-      body: msg.text,
-      content: msg.text,
-      created_at: msg.created_at.toISOString(),
-      status: msg.status,
-      waMsgId: msg.wa_msg_id,
-      is_bot: msg.is_ai_generated === 1,
-      mediaType: msg.media_type,
-      mediaId: msg.media_id
-    }));
+    const messages = messagesRows.map(msg => {
+      // Parsear media_extra si existe
+      let mediaExtra = null;
+      if (msg.media_extra) {
+        try {
+          mediaExtra = typeof msg.media_extra === 'string'
+            ? JSON.parse(msg.media_extra)
+            : msg.media_extra;
+        } catch (e) {
+          mediaExtra = null;
+        }
+      }
+
+      return {
+        id: msg.id,
+        direction: msg.direction === 'in' ? 'incoming' : 'outgoing',
+        body: msg.text,
+        content: msg.text,
+        created_at: msg.created_at.toISOString(),
+        status: msg.status,
+        waMsgId: msg.wa_msg_id,
+        is_bot: msg.is_ai_generated === 1,
+        mediaType: msg.media_type,
+        mediaId: msg.media_id,
+        mediaMime: msg.media_mime,
+        mediaCaption: msg.media_caption,
+        mediaExtra: mediaExtra
+      };
+    });
 
     res.json({
       ok: true,
@@ -4650,6 +5027,9 @@ const { registerRoutes, handleChatbotMessage, setSessionMode, reloadVisualFlows 
   emitFlowEvent: flowMonitorRoutes.emitFlowEvent
 });
 registerRoutes(app, panelAuth);
+
+// Inyectar el handler de chatbot en el endpoint de simulación
+simulateMessageHandler = handleChatbotMessage;
 
 // Actualizar la ruta de visual flows para incluir la función de reload
 // Esto permite que al activar/desactivar un flujo, se recargue en memoria

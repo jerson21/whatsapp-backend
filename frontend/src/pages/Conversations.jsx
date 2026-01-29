@@ -14,7 +14,15 @@ import {
   User,
   Bot,
   Phone,
-  MessageSquare
+  MessageSquare,
+  MapPin,
+  FileText,
+  Download,
+  Play,
+  Image as ImageIcon,
+  Mic,
+  Users,
+  Heart
 } from 'lucide-react'
 import { useSocket } from '../hooks/useSocket'
 
@@ -97,7 +105,14 @@ export default function Conversations() {
           created_at: new Date(data.timestamp).toISOString(),
           status: data.status,
           waMsgId: data.msgId,
-          is_bot: data.isAI || false
+          is_bot: data.isAI || false,
+          // Información de media
+          mediaType: data.media?.type || null,
+          mediaId: data.media?.id || data.mediaId || null,
+          mediaMime: data.media?.mime || null,
+          mediaCaption: data.media?.caption || null,
+          mediaExtra: data.media?.extra || null,
+          media: data.media // Mantener referencia completa para compatibilidad
         }]
       })
 
@@ -252,6 +267,181 @@ export default function Conversations() {
     )
   }
 
+  // Renderizar contenido multimedia
+  const renderMediaContent = (msg) => {
+    const { mediaType, mediaId, mediaExtra, mediaMime, media } = msg
+
+    // Para mensajes en tiempo real via WebSocket
+    const type = mediaType || media?.type
+    const id = mediaId || media?.id
+    const mime = mediaMime || media?.mime
+    const extra = mediaExtra || media?.extra
+
+    if (!type) return null
+
+    const isOutgoing = msg.direction === 'outgoing'
+    const baseUrl = '/api/chat/media'
+
+    switch (type) {
+      case 'image':
+        return (
+          <div className="mt-2 rounded-lg overflow-hidden max-w-xs">
+            <img
+              src={`${baseUrl}/${id}`}
+              alt="Imagen"
+              className="w-full h-auto cursor-pointer hover:opacity-90"
+              onClick={() => window.open(`${baseUrl}/${id}`, '_blank')}
+              onError={(e) => {
+                e.target.style.display = 'none'
+                e.target.nextSibling.style.display = 'flex'
+              }}
+            />
+            <div className="hidden items-center gap-2 p-3 bg-gray-100 rounded-lg">
+              <ImageIcon className="w-5 h-5 text-gray-500" />
+              <span className="text-sm text-gray-600">Imagen no disponible</span>
+            </div>
+          </div>
+        )
+
+      case 'video':
+        return (
+          <div className="mt-2 rounded-lg overflow-hidden max-w-xs">
+            <video
+              src={`${baseUrl}/${id}`}
+              controls
+              className="w-full h-auto rounded-lg"
+              preload="metadata"
+            >
+              Tu navegador no soporta video
+            </video>
+          </div>
+        )
+
+      case 'audio':
+        return (
+          <div className={`mt-2 flex items-center gap-2 p-2 rounded-lg ${isOutgoing ? 'bg-green-600' : 'bg-gray-100'}`}>
+            <Mic className={`w-5 h-5 ${isOutgoing ? 'text-white' : 'text-green-600'}`} />
+            <audio
+              src={`${baseUrl}/${id}`}
+              controls
+              className="h-8 flex-1"
+              preload="metadata"
+            />
+          </div>
+        )
+
+      case 'document':
+        const filename = extra?.filename || 'Documento'
+        return (
+          <a
+            href={`${baseUrl}/${id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`mt-2 flex items-center gap-3 p-3 rounded-lg ${isOutgoing ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-100 hover:bg-gray-200'} transition`}
+          >
+            <FileText className={`w-8 h-8 ${isOutgoing ? 'text-white' : 'text-blue-600'}`} />
+            <div className="flex-1 min-w-0">
+              <p className={`text-sm font-medium truncate ${isOutgoing ? 'text-white' : 'text-gray-800'}`}>
+                {filename}
+              </p>
+              <p className={`text-xs ${isOutgoing ? 'text-green-100' : 'text-gray-500'}`}>
+                {mime || 'Documento'}
+              </p>
+            </div>
+            <Download className={`w-5 h-5 ${isOutgoing ? 'text-white' : 'text-gray-500'}`} />
+          </a>
+        )
+
+      case 'sticker':
+        return (
+          <div className="mt-2">
+            <img
+              src={`${baseUrl}/${id}`}
+              alt="Sticker"
+              className="w-32 h-32 object-contain"
+              onError={(e) => {
+                e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 24 24" fill="none" stroke="gray" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>'
+              }}
+            />
+          </div>
+        )
+
+      case 'location':
+        const lat = extra?.latitude
+        const lng = extra?.longitude
+        const locName = extra?.name
+        const locAddress = extra?.address
+        const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`
+
+        return (
+          <a
+            href={mapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`mt-2 block p-3 rounded-lg ${isOutgoing ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-100 hover:bg-gray-200'} transition`}
+          >
+            <div className="flex items-start gap-3">
+              <div className={`p-2 rounded-full ${isOutgoing ? 'bg-green-500' : 'bg-red-100'}`}>
+                <MapPin className={`w-5 h-5 ${isOutgoing ? 'text-white' : 'text-red-600'}`} />
+              </div>
+              <div className="flex-1 min-w-0">
+                {locName && (
+                  <p className={`font-medium ${isOutgoing ? 'text-white' : 'text-gray-800'}`}>
+                    {locName}
+                  </p>
+                )}
+                {locAddress && (
+                  <p className={`text-sm ${isOutgoing ? 'text-green-100' : 'text-gray-600'}`}>
+                    {locAddress}
+                  </p>
+                )}
+                <p className={`text-xs mt-1 ${isOutgoing ? 'text-green-200' : 'text-gray-500'}`}>
+                  {lat?.toFixed(6)}, {lng?.toFixed(6)}
+                </p>
+              </div>
+            </div>
+          </a>
+        )
+
+      case 'contacts':
+        const contacts = extra?.contacts || []
+        return (
+          <div className={`mt-2 p-3 rounded-lg ${isOutgoing ? 'bg-green-600' : 'bg-gray-100'}`}>
+            <div className="flex items-center gap-2 mb-2">
+              <Users className={`w-5 h-5 ${isOutgoing ? 'text-white' : 'text-blue-600'}`} />
+              <span className={`font-medium ${isOutgoing ? 'text-white' : 'text-gray-800'}`}>
+                {contacts.length === 1 ? 'Contacto compartido' : `${contacts.length} contactos`}
+              </span>
+            </div>
+            {contacts.map((contact, idx) => (
+              <div key={idx} className={`p-2 rounded ${isOutgoing ? 'bg-green-500' : 'bg-white'} ${idx > 0 ? 'mt-2' : ''}`}>
+                <p className={`font-medium ${isOutgoing ? 'text-white' : 'text-gray-800'}`}>
+                  {contact.name}
+                </p>
+                {contact.phones?.map((phone, pidx) => (
+                  <p key={pidx} className={`text-sm ${isOutgoing ? 'text-green-100' : 'text-gray-600'}`}>
+                    {phone.phone} {phone.type && `(${phone.type})`}
+                  </p>
+                ))}
+              </div>
+            ))}
+          </div>
+        )
+
+      case 'reaction':
+        const emoji = extra?.emoji || msg.body
+        return (
+          <div className="flex items-center gap-1">
+            <Heart className={`w-4 h-4 ${isOutgoing ? 'text-white' : 'text-pink-500'}`} />
+            <span className="text-2xl">{emoji}</span>
+          </div>
+        )
+
+      default:
+        return null
+    }
+  }
+
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -398,7 +588,16 @@ export default function Conversations() {
                         Bot
                       </div>
                     )}
-                    <p className="whitespace-pre-wrap">{msg.body || msg.content}</p>
+                    {/* Renderizar contenido multimedia si existe */}
+                    {renderMediaContent(msg)}
+                    {/* Texto del mensaje (caption o texto normal) */}
+                    {(msg.body || msg.content) && (!msg.mediaType || msg.mediaType === 'reaction') && (
+                      <p className="whitespace-pre-wrap">{msg.body || msg.content}</p>
+                    )}
+                    {/* Caption para media con texto */}
+                    {msg.mediaType && msg.mediaType !== 'reaction' && (msg.mediaCaption || msg.body) && (
+                      <p className="whitespace-pre-wrap mt-2 text-sm">{msg.mediaCaption || msg.body}</p>
+                    )}
                     <div className={`flex items-center gap-1 text-xs mt-1 ${
                       msg.direction === 'outgoing' ? 'text-white opacity-90' : 'text-gray-400'
                     }`}>
