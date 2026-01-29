@@ -5085,10 +5085,15 @@ chatNamespace.use(async (socket, next) => {
   // Modo dashboard: un solo socket para todo el panel (estilo WhatsApp Web)
   if (dashboardToken) {
     try {
-      const [user, pass] = Buffer.from(dashboardToken, 'base64').toString().split(':');
-      if (user === PANEL_USER && pass === PANEL_PASS) {
-        socket.isDashboard = true;
-        return next();
+      const decoded = Buffer.from(dashboardToken, 'base64').toString();
+      const colonIdx = decoded.indexOf(':');
+      if (colonIdx > 0) {
+        const user = decoded.substring(0, colonIdx);
+        const pass = decoded.substring(colonIdx + 1);
+        if (PANEL_USER && user === PANEL_USER && pass === PANEL_PASS) {
+          socket.isDashboard = true;
+          return next();
+        }
       }
     } catch {}
     return next(new Error('Invalid dashboard token'));
