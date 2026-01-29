@@ -52,28 +52,13 @@ export default function Conversations() {
   useEffect(() => {
     loadConversations()
 
-    // Conectar a SSE para actualizaciones de lista de conversaciones
-    const eventSource = new EventSource('/api/chat/inbox-stream')
-
-    eventSource.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-      if (data.type === 'inbox_update') {
-        // Recargar lista de conversaciones
-        loadConversations()
-      }
-    }
-
-    eventSource.onerror = (error) => {
-      console.error('Inbox SSE error:', error)
-      eventSource.close()
-      // Reconectar después de 5 segundos
-      setTimeout(() => {
-        window.location.reload()
-      }, 5000)
-    }
+    // Polling cada 30 segundos como fallback (en caso de que socket falle)
+    const interval = setInterval(() => {
+      loadConversations()
+    }, 30000)
 
     return () => {
-      eventSource.close()
+      clearInterval(interval)
     }
   }, [])
 
