@@ -2136,7 +2136,8 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               [echoSessionId, msgText, recipientId, msgId, channel]
             );
 
-            logger.info({ sessionId: echoSessionId, mid: msgId, channel }, '📤 Echo message saved as outgoing');
+            const echoDbId = ins.insertId;
+            logger.info({ sessionId: echoSessionId, mid: msgId, dbId: echoDbId, channel }, '📤 Echo message saved as outgoing');
 
             // Notificar al panel via SSE
             ssePush(echoSessionId, {
@@ -2144,9 +2145,27 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               direction: 'out',
               text: msgText,
               msgId,
+              dbId: echoDbId,
               status: 'sent',
               at: Date.now()
             });
+
+            // Notificar via Socket.IO (tiempo real en el panel)
+            if (global.io) {
+              const echoPayload = {
+                type: 'message',
+                direction: 'out',
+                text: msgText,
+                phone: recipientId,
+                sessionId: echoSessionId,
+                msgId,
+                dbId: echoDbId,
+                status: 'sent',
+                timestamp: Date.now()
+              };
+              global.io.of('/chat').to(`session_${echoSessionId}`).emit('new_message', echoPayload);
+              global.io.of('/chat').to('dashboard_all').emit('new_message', echoPayload);
+            }
 
             // Actualizar timestamp de la sesión
             await pool.query('UPDATE chat_sessions SET updated_at=NOW() WHERE id=?', [echoSessionId]);
