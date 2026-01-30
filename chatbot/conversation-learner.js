@@ -109,7 +109,7 @@ function createConversationLearner({ pool, logger, openai }) {
     try {
       // 1. Obtener mensajes de la sesion
       const [messages] = await pool.query(
-        `SELECT id, direction, text, is_ai_generated, agent_id, created_at
+        `SELECT id, direction, text, is_ai_generated, created_at
          FROM chat_messages
          WHERE session_id = ? AND text IS NOT NULL AND text != ''
          ORDER BY created_at ASC`,
@@ -130,7 +130,7 @@ function createConversationLearner({ pool, logger, openai }) {
 
       // 2. Obtener info de la sesion
       const [sessions] = await pool.query(
-        `SELECT s.id, s.escalation_status, s.channel, a.role as agent_role
+        `SELECT s.id, s.escalation_status, s.channel, s.assigned_agent_id, a.role as agent_role
          FROM chat_sessions s
          LEFT JOIN agents a ON s.assigned_agent_id = a.id
          WHERE s.id = ?`,
@@ -169,7 +169,7 @@ function createConversationLearner({ pool, logger, openai }) {
           question,
           answer: msg.text,
           session,
-          agentId: msg.agent_id,
+          agentId: session.assigned_agent_id || null,
           nextClientMessage: nextClientMsg?.text || null
         });
 
@@ -180,7 +180,7 @@ function createConversationLearner({ pool, logger, openai }) {
             question,
             answer: msg.text,
             score,
-            agentId: msg.agent_id
+            agentId: session.assigned_agent_id || null
           });
         } else {
           logger.debug({ sessionId, question: question.slice(0, 50), answer: msg.text.slice(0, 50), score, minQuality },
