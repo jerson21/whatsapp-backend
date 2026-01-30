@@ -141,49 +141,64 @@ function createConversationLearner({ pool, logger, openai }) {
 
       const pairs = [];
 
-      // 3. Recorrer mensajes buscando pares Q→A
-      for (let i = 0; i < messages.length; i++) {
-        const msg = messages[i];
-
-        // Solo mensajes salientes de agentes humanos (no del bot)
-        if (msg.direction !== 'out' || msg.is_ai_generated) continue;
-        if (!msg.text || msg.text.length < 5) continue; // Bajado de 10 a 5 chars
-
-        // Buscar la pregunta previa mas cercana (mensaje entrante)
-        let question = null;
-        for (let j = i - 1; j >= 0; j--) {
-          if (messages[j].direction === 'in' && messages[j].text) {
-            question = messages[j].text;
-            break;
-          }
+      // 3. Agrupar mensajes en TURNOS conversacionales
+      //    Mensajes consecutivos del mismo direction se juntan en un turno.
+      //    Ejemplo: [in, in, out, out, out, in, out] → turnos: [in+in], [out+out+out], [in], [out]
+      const turns = [];
+      for (const msg of messages) {
+        if (!msg.text || msg.text.trim().length === 0) continue;
+        const lastTurn = turns[turns.length - 1];
+        if (lastTurn && lastTurn.direction === msg.direction) {
+          lastTurn.texts.push(msg.text);
+        } else {
+          turns.push({ direction: msg.direction, texts: [msg.text], isAi: msg.is_ai_generated });
         }
+      }
 
-        if (!question) continue;
-        if (question.length < 3) continue; // Bajado de 5 a 3 chars
-        if (isTrivialGreeting(question)) continue;
+      logger.debug({ sessionId, turnsCount: turns.length, turnDirections: turns.map(t => t.direction).join(',') },
+        'Learning: turnos detectados');
 
-        // Siguiente mensaje del cliente (para scoring)
-        const nextClientMsg = messages.slice(i + 1).find(m => m.direction === 'in');
+      // 4. Recorrer turnos buscando pares [in-turn] → [out-turn]
+      for (let i = 0; i < turns.length - 1; i++) {
+        const questionTurn = turns[i];
+        const answerTurn = turns[i + 1];
+
+        // Solo pares in→out
+        if (questionTurn.direction !== 'in' || answerTurn.direction !== 'out') continue;
+
+        // Filtrar respuestas del bot
+        if (answerTurn.isAi) continue;
+
+        // Concatenar todos los mensajes del turno
+        const questionTexts = questionTurn.texts.filter(t => !isTrivialGreeting(t) && t.length >= 3);
+        const question = questionTexts.join('\n').trim();
+        const answer = answerTurn.texts.join('\n').trim();
+
+        if (!question || question.length < 3) continue;
+        if (!answer || answer.length < 5) continue;
+
+        // Siguiente turno del cliente (para scoring)
+        const nextClientTurn = turns.slice(i + 2).find(t => t.direction === 'in');
+        const nextClientMessage = nextClientTurn ? nextClientTurn.texts[0] : null;
 
         const score = calculateQualityScore({
           question,
-          answer: msg.text,
+          answer,
           session,
           agentId: session.assigned_agent_id || null,
-          nextClientMessage: nextClientMsg?.text || null
+          nextClientMessage
         });
 
-        // Solo guardar si supera el umbral minimo (bajado a 20 por defecto)
         const minQuality = LEARNING_MIN_QUALITY();
         if (score >= minQuality) {
           pairs.push({
             question,
-            answer: msg.text,
+            answer,
             score,
             agentId: session.assigned_agent_id || null
           });
         } else {
-          logger.debug({ sessionId, question: question.slice(0, 50), answer: msg.text.slice(0, 50), score, minQuality },
+          logger.debug({ sessionId, question: question.slice(0, 50), answer: answer.slice(0, 50), score, minQuality },
             'Learning: par descartado por baja calidad');
         }
       }
@@ -270,6 +285,12 @@ function createConversationLearner({ pool, logger, openai }) {
     if (!LEARNING_ENABLED()) return { processed: 0 };
 
     try {
+      // Limpiar pares anteriores para regenerar con la logica actualizada
+      const [deleted] = await pool.query('DELETE FROM learned_qa_pairs WHERE status != ?', ['approved']);
+      if (deleted.affectedRows > 0) {
+        logger.info({ deleted: deleted.affectedRows }, 'Learning: pares pendientes/rechazados eliminados para reprocesar');
+      }
+
       // Procesar sesiones resueltas, cerradas, o abiertas con suficientes mensajes
       let query = `SELECT s.id FROM chat_sessions s
         WHERE (
