@@ -189,8 +189,12 @@ module.exports = function createLearningRoutes(pool, conversationLearner, openai
   router.post('/reprocess', async (req, res) => {
     try {
       const { from, to } = req.body;
-      const result = await conversationLearner.reprocessSessions({ from, to });
-      res.json({ ok: true, ...result });
+      // Responder inmediatamente — el procesamiento con IA puede tardar minutos
+      res.json({ ok: true, message: 'Reprocesamiento iniciado en background. Los pares aparecerán gradualmente.' });
+      // Ejecutar en background (no await)
+      conversationLearner.reprocessSessions({ from, to }).catch(err => {
+        console.error('Learning: error en reprocess background', err);
+      });
     } catch (e) {
       res.status(500).json({ ok: false, error: e.message });
     }
