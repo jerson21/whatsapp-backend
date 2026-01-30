@@ -128,21 +128,21 @@ function createConversationLearner({ pool, logger, openai }) {
           content: `Eres un experto en extraccion de conocimiento de conversaciones de venta.
 El negocio es una tienda de RESPALDOS DE CAMA (cabeceras/headboards) en Chile.
 
-Tu trabajo: analizar la conversacion entre CLIENTE y AGENTE, y extraer pares pregunta/respuesta que serian utiles para entrenar un chatbot de ventas.
+Tu trabajo: analizar la conversacion entre CLIENTE y AGENTE, y extraer pares pregunta/respuesta FIELES a lo que realmente se dijo.
 
-REGLAS:
-1. La "pregunta" debe representar lo que el cliente realmente quiere saber (puedes reformularla si el mensaje original es ambiguo, pero mantente fiel al intent)
-2. La "respuesta" debe ser la informacion util que dio el agente (puedes combinar multiples mensajes del agente si responden a la misma pregunta)
-3. Incluye info de precios, modelos, medidas, materiales, despacho, plazos, formas de pago
-4. NO incluyas saludos triviales (hola, gracias, ok, etc.)
-5. NO incluyas pares donde la respuesta no tiene info util
-6. Si el agente da informacion general del producto (como medidas de base, materiales, etc.) como parte de la venta, incluyela como parte de la respuesta
-7. Califica cada par con quality_score de 0-100 segun que tan util seria para entrenar al chatbot
+REGLAS ESTRICTAS:
+1. La "pregunta" debe representar lo que el cliente realmente quiere saber. Puedes limpiar errores de ortografia o reformular levemente para claridad, pero mantente fiel al intent original del cliente.
+2. La "respuesta" DEBE usar las palabras EXACTAS que escribio el agente humano. Si el agente envio varios mensajes consecutivos respondiendo la misma pregunta, concatenalos con un punto o coma. NUNCA parafrasees, reformules ni cambies el texto del agente.
+3. PROHIBIDO inventar, agregar o inferir informacion que el agente NO haya escrito explicitamente en la conversacion. Si el agente no menciono un dato, NO lo incluyas en la respuesta.
+4. Incluye info de precios, modelos, medidas, materiales, despacho, plazos, formas de pago — SOLO si el agente los menciono.
+5. NO incluyas saludos triviales (hola, gracias, ok, etc.)
+6. NO incluyas pares donde la respuesta no tiene info util
+7. Califica cada par con quality_score de 0-100 segun que tan util y completa es la respuesta del agente
 
 Responde SOLO con un JSON array. Ejemplo:
 [
-  {"question": "Cuanto cuesta el modelo Venecia King?", "answer": "El modelo Venecia King en lino gris claro esta a $65.000 oferta especial, mas $6.000 de envio. Total $71.000", "quality_score": 85},
-  {"question": "Cuanto demora el despacho a Santiago?", "answer": "El despacho dentro de Santiago tiene un costo de $5.000 y demora 3-5 dias habiles", "quality_score": 75}
+  {"question": "Cuanto cuesta el modelo Venecia King?", "answer": "el venecia king en lino gris claro esta a $65.000 oferta, el envio son $6.000", "quality_score": 85},
+  {"question": "Cuanto demora el despacho?", "answer": "dentro de santiago son 3 a 5 dias habiles", "quality_score": 75}
 ]
 
 Si no hay pares utiles, responde: []`
