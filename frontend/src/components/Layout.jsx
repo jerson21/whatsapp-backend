@@ -11,7 +11,8 @@ import {
   BarChart3,
   Radio,
   UserCog,
-  Building2
+  Building2,
+  Brain
 } from 'lucide-react'
 
 export default function Layout() {
@@ -29,7 +30,8 @@ export default function Layout() {
       { to: '/logs', icon: Activity, label: 'Logs' },
       { to: '/leads', icon: Users, label: 'Leads' },
       { to: '/analytics', icon: BarChart3, label: 'Analytics' },
-      { to: '/monitor', icon: Radio, label: 'Monitor' }
+      { to: '/monitor', icon: Radio, label: 'Monitor' },
+      { to: '/learning', icon: Brain, label: 'Cerebro IA' }
     ] : [])
   ]
 

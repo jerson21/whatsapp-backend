@@ -12,6 +12,7 @@ import Analytics from './pages/Analytics'
 import FlowMonitor from './pages/FlowMonitor'
 import AgentManagement from './pages/AgentManagement'
 import DepartmentManagement from './pages/DepartmentManagement'
+import LearningPage from './pages/LearningPage'
 
 function PrivateRoute({ children }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
@@ -50,6 +51,7 @@ export default function App() {
         <Route path="leads" element={<SupervisorRoute><Leads /></SupervisorRoute>} />
         <Route path="analytics" element={<SupervisorRoute><Analytics /></SupervisorRoute>} />
         <Route path="monitor" element={<SupervisorRoute><FlowMonitor /></SupervisorRoute>} />
+        <Route path="learning" element={<SupervisorRoute><LearningPage /></SupervisorRoute>} />
       </Route>
 
       {/* Fallback */}

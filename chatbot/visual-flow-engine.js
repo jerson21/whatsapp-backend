@@ -7,13 +7,14 @@ const logger = require('pino')({ level: process.env.LOG_LEVEL || 'info' });
 const OpenAI = require('openai');
 
 class VisualFlowEngine {
-  constructor(dbPool, classifier, sendMessage, emitFlowEvent = null, sendInteractiveButtons = null, sendInteractiveList = null) {
+  constructor(dbPool, classifier, sendMessage, emitFlowEvent = null, sendInteractiveButtons = null, sendInteractiveList = null, knowledgeRetriever = null) {
     this.db = dbPool;
     this.classifier = classifier;
     this.sendMessage = sendMessage; // Función para enviar mensajes de texto a WhatsApp
     this.sendInteractiveButtons = sendInteractiveButtons; // Función para enviar botones interactivos
     this.sendInteractiveList = sendInteractiveList; // Función para enviar listas interactivas
     this.emitFlowEvent = emitFlowEvent; // Función para emitir eventos al monitor
+    this.knowledgeRetriever = knowledgeRetriever; // Sistema de aprendizaje (puede ser null)
     this.activeFlows = [];
     this.sessionStates = new Map(); // phone -> { flowId, currentNodeId, variables }
 
@@ -188,12 +189,17 @@ class VisualFlowEngine {
   }
 
   /**
-   * Fallback con IA cuando no hay flujo que coincida
+   * Fallback con IA cuando no hay flujo que coincida.
+   * Si el sistema de aprendizaje esta activo, inyecta:
+   * - Conocimiento aprendido de conversaciones reales
+   * - Precios vigentes de product_prices
+   * - Historial conversacional (ultimos 30 msgs agrupados)
+   * - Instruccion de fidelidad configurable
    */
   async handleAIFallback(phone, message, context) {
     if (!this.openai) {
       logger.warn({ phone }, 'AI fallback not available - no OpenAI key');
-      return null; // Dejar que el chatbot.js maneje el fallback estándar
+      return null;
     }
 
     try {
@@ -201,38 +207,124 @@ class VisualFlowEngine {
       const savedFields = await this.loadContactFields(phone);
       const userName = savedFields.nombre || savedFields.name || '';
 
-      const systemPrompt = `Eres un asistente virtual amable y profesional de Respaldos Chile.
-Tu rol es ayudar a los clientes con consultas generales.
+      // --- Conocimiento aprendido + precios (si el retriever esta disponible) ---
+      let knowledgeContext = [];
+      let priceContext = [];
+      let recentHistory = [];
 
-REGLAS:
-- Responde de forma concisa (máximo 3 líneas)
-- Sé amable pero profesional
-- Si no puedes ayudar con algo específico, sugiere escribir "agente" para hablar con una persona
-- Puedes sugerir escribir "menu" para ver las opciones disponibles
-${userName ? `- El usuario se llama ${userName}, úsalo ocasionalmente para personalizar` : ''}
+      if (this.knowledgeRetriever) {
+        // Buscar Q&A similares aprendidos
+        knowledgeContext = await this.knowledgeRetriever.retrieve(message).catch(err => {
+          logger.error({ err }, 'Error en knowledge retriever');
+          return [];
+        });
+
+        // Buscar precios vigentes si es consulta de precio
+        if (this.knowledgeRetriever.isPriceQuery(message)) {
+          const { productName, variant } = this.knowledgeRetriever.extractProductInfo(message);
+          if (productName) {
+            priceContext = await this.knowledgeRetriever.findPrice(productName, variant).catch(() => []);
+          }
+        }
+
+        // Cargar historial conversacional
+        if (context.sessionId) {
+          recentHistory = await this.knowledgeRetriever.getRecentContext(context.sessionId).catch(() => []);
+        }
+      }
+
+      // --- Construir system prompt enriquecido ---
+      const fidelityLevel = process.env.LEARNING_FIDELITY_LEVEL || 'enhanced';
+      const fidelityInstruction = this._getFidelityInstruction(fidelityLevel);
+
+      let systemPrompt = `Eres un vendedor amable de Respaldos Chile que conversa por WhatsApp/Instagram.
+
+ESTILO:
+- Habla como una persona real, no como un catalogo
+- Usa lenguaje casual pero profesional (chileno neutro)
+- Haz preguntas para entender que necesita el cliente
+- Sugiere opciones en vez de listar todo
+- Cierra con una pregunta ("te interesa?", "en que color lo buscas?")
+- Maximo 3-4 lineas por mensaje
+${userName ? `- El cliente se llama ${userName}, usalo para personalizar` : ''}
 
 NUNCA:
-- Inventes información sobre productos o precios
-- Prometas cosas que no puedes cumplir
-- Des información técnica detallada (sugiere hablar con un agente)`;
+- Listes especificaciones como ficha tecnica
+- Uses bullets o formatos de catalogo
+- Digas "Estimado/a cliente" ni "Le informamos que..."
+- Inventes precios o plazos que no estan en el contexto
 
+SI NO SABES:
+- "Dejame confirmarlo con el equipo y te respondo altiro"
+- NO inventes informacion`;
+
+      // Inyectar conocimiento aprendido
+      if (knowledgeContext.length > 0) {
+        systemPrompt += `\n\n--- CONOCIMIENTO DEL EQUIPO ---
+Estas son respuestas que tu equipo humano ha dado a preguntas similares.
+Usa esta informacion para responder de forma precisa:
+
+${knowledgeContext.map(c => `Pregunta: "${c.question}"
+Respuesta del equipo: "${c.answer}"`).join('\n\n')}
+--- FIN CONOCIMIENTO ---`;
+      }
+
+      // Inyectar precios vigentes
+      if (priceContext.length > 0) {
+        systemPrompt += `\n\n--- PRECIOS VIGENTES ---
+${priceContext.map(p => `${p.product_name} ${p.variant || ''}: $${Number(p.price).toLocaleString('es-CL')}${p.notes ? ` (${p.notes})` : ''}`).join('\n')}
+IMPORTANTE: Usa SOLO estos precios. Los precios en las respuestas del equipo pueden estar desactualizados.
+--- FIN PRECIOS ---`;
+      }
+
+      // Agregar instruccion de fidelidad
+      if (knowledgeContext.length > 0) {
+        systemPrompt += `\n\n${fidelityInstruction}`;
+      }
+
+      // --- Construir array de mensajes con historial ---
+      const messages = [
+        { role: 'system', content: systemPrompt }
+      ];
+
+      // Historial agrupado (turnos reales de conversacion)
+      if (recentHistory.length > 0) {
+        for (const turn of recentHistory) {
+          messages.push({
+            role: turn.direction === 'incoming' ? 'user' : 'assistant',
+            content: turn.text
+          });
+        }
+      }
+
+      // Mensaje actual del cliente
+      messages.push({ role: 'user', content: message });
+
+      // --- Llamar a OpenAI ---
       const aiResponse = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: message }
-        ],
-        temperature: 0.7,
-        max_tokens: 150
+        model: process.env.CHATBOT_AI_MODEL || 'gpt-4o-mini',
+        messages,
+        temperature: knowledgeContext.length > 0 ? 0.3 : 0.5,
+        max_tokens: 350
       });
 
       const responseText = aiResponse.choices[0]?.message?.content || 'Gracias por tu mensaje. ¿En qué puedo ayudarte?';
 
-      if (this.sendMessage) {
+      // Enviar con delay realista y split si es necesario
+      const learningEnabled = String(process.env.LEARNING_ENABLED || 'false').toLowerCase() === 'true';
+      if (learningEnabled) {
+        await this._sendBotResponse(phone, responseText);
+      } else if (this.sendMessage) {
         await this.sendMessage(phone, responseText);
       }
 
-      logger.info({ phone, response: responseText.slice(0, 50) }, '🤖 AI fallback response sent');
+      logger.info({
+        phone,
+        response: responseText.slice(0, 80),
+        contextUsed: knowledgeContext.length,
+        pricesUsed: priceContext.length,
+        historyTurns: recentHistory.length
+      }, '🤖 AI fallback response sent');
 
       return {
         type: 'ai_fallback',
@@ -242,7 +334,101 @@ NUNCA:
 
     } catch (err) {
       logger.error({ err, phone }, 'Error in AI fallback');
-      return null; // Dejar que chatbot.js maneje el fallback estándar
+      return null;
+    }
+  }
+
+  /**
+   * Instruccion de fidelidad para el system prompt
+   */
+  _getFidelityInstruction(level) {
+    switch (level) {
+      case 'exact':
+        return `FIDELIDAD: Responde usando las respuestas del equipo TAL CUAL, sin modificar ni una palabra. Copia la respuesta exacta.`;
+      case 'polished':
+        return `FIDELIDAD: Responde usando las respuestas del equipo como base. Puedes corregir ortografia y formato, pero NO cambies el contenido ni agregues info.`;
+      case 'enhanced':
+        return `FIDELIDAD: Responde usando la informacion de las respuestas del equipo. Puedes reorganizar, mejorar la redaccion y agregar cortesia. Cierra con una pregunta cuando sea apropiado. Manten los datos exactos.`;
+      case 'creative':
+        return `FIDELIDAD: USA la informacion de las respuestas del equipo como referencia. Responde de forma natural y conversacional con tu propio estilo. Los datos (precios, plazos, medidas) deben ser exactos, pero la forma de decirlo es libre. Se vendedor, no robot.`;
+      default:
+        return `FIDELIDAD: Responde usando la informacion de las respuestas del equipo. Manten los datos exactos pero mejora la redaccion.`;
+    }
+  }
+
+  /**
+   * Calcula delay realista de escritura humana
+   */
+  _calculateTypingDelay(text) {
+    const CHARS_PER_SECOND = Number(process.env.LEARNING_TYPING_SPEED || 3.5);
+    const MIN_DELAY = 1500;
+    const MAX_DELAY = 12000;
+
+    const charCount = (text || '').length;
+    const calculatedDelay = (charCount / CHARS_PER_SECOND) * 1000;
+    // Variacion +-20% para que no sea roboticamente exacto
+    const variation = calculatedDelay * (0.8 + Math.random() * 0.4);
+
+    return Math.min(MAX_DELAY, Math.max(MIN_DELAY, Math.round(variation)));
+  }
+
+  /**
+   * Divide respuesta larga en multiples mensajes cortos
+   */
+  _splitResponse(text) {
+    const MAX_CHARS = Number(process.env.LEARNING_MAX_MSG_LENGTH || 180);
+
+    if (!text || text.length <= MAX_CHARS) return [text];
+
+    const parts = [];
+    // Dividir por oraciones (punto, signo de exclamacion, interrogacion)
+    const sentences = text.split(/(?<=[.!?])\s+/);
+    let current = '';
+
+    for (const sentence of sentences) {
+      if ((current + ' ' + sentence).trim().length > MAX_CHARS && current) {
+        parts.push(current.trim());
+        current = sentence;
+      } else {
+        current = current ? current + ' ' + sentence : sentence;
+      }
+    }
+    if (current.trim()) parts.push(current.trim());
+
+    // Si quedo en mas de 3 partes, reagrupar en 2
+    if (parts.length > 3) {
+      const mid = Math.ceil(parts.length / 2);
+      return [
+        parts.slice(0, mid).join(' '),
+        parts.slice(mid).join(' ')
+      ];
+    }
+
+    return parts;
+  }
+
+  /**
+   * Envia respuesta con delay realista y dividida en multiples mensajes
+   */
+  async _sendBotResponse(phone, fullText) {
+    const parts = this._splitResponse(fullText);
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+
+      // Delay proporcional al texto
+      const delay = this._calculateTypingDelay(part);
+      await new Promise(resolve => setTimeout(resolve, delay));
+
+      // Enviar parte
+      if (this.sendMessage) {
+        await this.sendMessage(phone, part);
+      }
+
+      // Pausa extra entre mensajes
+      if (i < parts.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
     }
   }
 

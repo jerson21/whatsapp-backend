@@ -54,7 +54,10 @@ services:
       redis:
         condition: service_healthy
     volumes:
+      - .:/app
+      - /app/node_modules
       - ./logs:/app/logs
+    command: ["node", "--watch", "--dns-result-order=ipv4first", "app-cloud.js"]
     networks:
       - whatsapp-network
 

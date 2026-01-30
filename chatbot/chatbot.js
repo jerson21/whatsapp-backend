@@ -10,7 +10,7 @@
 const VisualFlowEngine = require('./visual-flow-engine');
 const MessageClassifier = require('./message-classifier');
 
-function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInteractiveButtons, sendInteractiveList, emitFlowEvent, autoAssignDepartment }) {
+function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInteractiveButtons, sendInteractiveList, emitFlowEvent, autoAssignDepartment, knowledgeRetriever }) {
   // Configuración
   const CHATBOT_MODE_DEFAULT = process.env.CHATBOT_MODE_DEFAULT || 'automatic';
   const CHATBOT_AUTO_REPLY_DELAY = Number(process.env.CHATBOT_AUTO_REPLY_DELAY || 1000);
@@ -29,7 +29,8 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
     sendTextViaCloudAPI,
     emitFlowEvent,
     sendInteractiveButtons,
-    sendInteractiveList
+    sendInteractiveList,
+    knowledgeRetriever || null
   );
 
   // Cargar flujos activos al inicio

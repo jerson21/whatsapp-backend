@@ -31,7 +31,7 @@ const fs = require('fs');
 const multer = require('multer');
 const upload = multer(); // memoria
 const { createChatbot } = require('./chatbot/chatbot');
-const { createFAQStore } = require('./faq/faq-store');
+// createFAQStore eliminado (codigo muerto — usamos createFAQDatabase)
 const { createFAQDatabase } = require('./faq/faq-database');
 const MessageClassifier = require('./chatbot/message-classifier');
 const queueService = require('./queues/queue-service');
@@ -207,6 +207,17 @@ const channelAdapters = new ChannelAdapters({ logger, db });
 
 /* ========= FAQ Store (BM25 ligero) ========= */
 const faqStore = createFAQDatabase({ pool, logger });
+
+/* ========= Sistema de Aprendizaje IA ========= */
+const OpenAI = require('openai');
+const { createConversationLearner } = require('./chatbot/conversation-learner');
+const openaiClient = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
+const conversationLearner = createConversationLearner({ pool, logger, openai: openaiClient });
+
+const { createKnowledgeRetriever } = require('./chatbot/knowledge-retriever');
+const knowledgeRetriever = createKnowledgeRetriever({ pool, logger, openai: openaiClient, faqStore });
 
 /* ========= Schema ========= */
 async function ensureSchema() {
@@ -548,6 +559,51 @@ await conn.query(`
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_title (title),
         INDEX idx_intent (intent)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // Learning System — pares Q&A aprendidos de conversaciones reales
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS learned_qa_pairs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        session_id INT NOT NULL,
+        question TEXT NOT NULL,
+        answer TEXT NOT NULL,
+        quality_score INT DEFAULT 0,
+        status ENUM('pending','approved','rejected') DEFAULT 'pending',
+        embedding JSON NULL,
+        agent_id INT NULL,
+        channel VARCHAR(20) DEFAULT 'whatsapp',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_status (status),
+        INDEX idx_quality (quality_score)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // Learning System — tabla de precios vigentes
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS product_prices (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        product_name VARCHAR(255) NOT NULL,
+        variant VARCHAR(255) NULL,
+        price DECIMAL(10,2) NOT NULL,
+        currency VARCHAR(10) DEFAULT 'CLP',
+        is_active BOOLEAN DEFAULT TRUE,
+        notes TEXT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_product (product_name),
+        INDEX idx_active (is_active)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // Learning System — tabla de cache para reportes del cerebro IA
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS brain_reports (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        report_json JSON NOT NULL,
+        pairs_hash VARCHAR(64) NOT NULL,
+        generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_generated (generated_at DESC)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
@@ -4114,6 +4170,10 @@ app.use('/api/chat', panelAuth, assignmentRoutes(pool));
 const externalApiRoutes = require('./api/external-api-routes');
 app.use('/api/external', panelAuth, externalApiRoutes(pool, sendTextViaCloudAPI));
 
+/* ========= API: Learning System (Q&A pairs, precios) ========= */
+const learningRoutes = require('./api/learning-routes');
+app.use('/api/learning', panelAuth, supervisorOnly, learningRoutes(pool, conversationLearner, openaiClient));
+
 // Chequeo de presencia (no disponible en Cloud API)
 app.get('/api/chat/check-presence', async (req, res) => {
   try {
@@ -4323,6 +4383,13 @@ app.delete('/api/chat/conversations/:sessionId', async (req, res) => {
     if (!session) {
       return res.status(404).json({ ok: false, error: 'Conversación no encontrada' });
     }
+    // Extraer pares Q&A ANTES de eliminar (para que el sistema aprenda)
+    try {
+      await conversationLearner.extractFromSession(session.id);
+    } catch (err) {
+      logger.error({ err, sessionId: session.id }, 'Learning: error extrayendo pares antes de eliminar');
+    }
+
     await pool.query('DELETE FROM chat_sessions WHERE id=?', [session.id]);
     // Limpiar estado en memoria del chatbot (sessionModes + visualFlowEngine.sessionStates)
     if (typeof clearSessionState === 'function') {
@@ -5701,10 +5768,15 @@ app.post('/api/chat/reset-escalation', express.json(), async (req, res) => {
     `, [sessionId]);
     
     logger.info({ sessionId }, '🔄 Estado de escalamiento reseteado por agente');
-    
-    res.json({ 
-      ok: true, 
-      message: 'Estado de escalamiento reseteado correctamente' 
+
+    // Hook: extraer pares Q&A para el sistema de aprendizaje
+    conversationLearner.extractFromSession(sessionId).catch(err => {
+      logger.error({ err, sessionId }, 'Learning: error extrayendo pares al resolver');
+    });
+
+    res.json({
+      ok: true,
+      message: 'Estado de escalamiento reseteado correctamente'
     });
     
   } catch (e) {
@@ -5725,7 +5797,8 @@ const { registerRoutes, handleChatbotMessage, setSessionMode, clearSessionState,
   sendInteractiveButtons,
   sendInteractiveList,
   emitFlowEvent: flowMonitorRoutes.emitFlowEvent,
-  autoAssignDepartment
+  autoAssignDepartment,
+  knowledgeRetriever
 });
 registerRoutes(app, panelAuth);
 
@@ -5940,6 +6013,25 @@ httpServer.listen(PORT, async () => {
     });
     if (queuesInitialized) {
       logger.info('✅ Sistema de colas inicializado (Redis + Bull MQ)');
+    }
+
+    // Jobs periodicos del sistema de aprendizaje
+    if (String(process.env.LEARNING_ENABLED || 'false').toLowerCase() === 'true') {
+      // Generar embeddings para pares aprobados (cada 5 min)
+      setInterval(() => {
+        conversationLearner.generateEmbeddings().catch(err => {
+          logger.error({ err }, 'Learning: error en job de embeddings');
+        });
+      }, 5 * 60 * 1000);
+
+      // Extraer pares de sesiones inactivas (cada 10 min)
+      setInterval(() => {
+        conversationLearner.extractInactiveSessions().catch(err => {
+          logger.error({ err }, 'Learning: error en job de extraccion por inactividad');
+        });
+      }, 10 * 60 * 1000);
+
+      logger.info('✅ Sistema de aprendizaje IA activado (embeddings c/5 min, extraccion c/10 min)');
     }
 
   } catch (e) {
