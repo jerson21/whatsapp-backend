@@ -9,7 +9,7 @@
  */
 
 const LEARNING_ENABLED = () => String(process.env.LEARNING_ENABLED || 'false').toLowerCase() === 'true';
-const LEARNING_MIN_QUALITY = () => Number(process.env.LEARNING_MIN_QUALITY || 50);
+const LEARNING_MIN_QUALITY = () => Number(process.env.LEARNING_MIN_QUALITY || 20);
 const LEARNING_AUTO_APPROVE = () => String(process.env.LEARNING_AUTO_APPROVE || 'false').toLowerCase() === 'true';
 const AUTO_APPROVE_THRESHOLD = 80;
 
@@ -37,7 +37,7 @@ const TRIVIAL_PATTERNS = [
 
 function isTrivialGreeting(text) {
   const trimmed = String(text || '').trim();
-  if (trimmed.length < 5) return true;
+  if (trimmed.length < 3) return true;
   return TRIVIAL_PATTERNS.some(p => p.test(trimmed));
 }
 
@@ -116,7 +116,17 @@ function createConversationLearner({ pool, logger, openai }) {
         [sessionId]
       );
 
-      if (messages.length < 2) return; // necesitamos al menos pregunta + respuesta
+      if (messages.length < 2) {
+        logger.debug({ sessionId, msgCount: messages.length }, 'Learning: sesion con menos de 2 mensajes, saltando');
+        return;
+      }
+
+      // Diagnostico: contar mensajes por tipo
+      const inMsgs = messages.filter(m => m.direction === 'in');
+      const outMsgs = messages.filter(m => m.direction === 'out');
+      const humanOutMsgs = outMsgs.filter(m => !m.is_ai_generated);
+      logger.info({ sessionId, total: messages.length, in: inMsgs.length, out: outMsgs.length, humanOut: humanOutMsgs.length },
+        'Learning: analizando sesion');
 
       // 2. Obtener info de la sesion
       const [sessions] = await pool.query(
@@ -137,7 +147,7 @@ function createConversationLearner({ pool, logger, openai }) {
 
         // Solo mensajes salientes de agentes humanos (no del bot)
         if (msg.direction !== 'out' || msg.is_ai_generated) continue;
-        if (!msg.text || msg.text.length < 10) continue;
+        if (!msg.text || msg.text.length < 5) continue; // Bajado de 10 a 5 chars
 
         // Buscar la pregunta previa mas cercana (mensaje entrante)
         let question = null;
@@ -149,7 +159,7 @@ function createConversationLearner({ pool, logger, openai }) {
         }
 
         if (!question) continue;
-        if (question.length < 5) continue;
+        if (question.length < 3) continue; // Bajado de 5 a 3 chars
         if (isTrivialGreeting(question)) continue;
 
         // Siguiente mensaje del cliente (para scoring)
@@ -163,14 +173,18 @@ function createConversationLearner({ pool, logger, openai }) {
           nextClientMessage: nextClientMsg?.text || null
         });
 
-        // Solo guardar si supera el umbral minimo
-        if (score >= LEARNING_MIN_QUALITY()) {
+        // Solo guardar si supera el umbral minimo (bajado a 20 por defecto)
+        const minQuality = LEARNING_MIN_QUALITY();
+        if (score >= minQuality) {
           pairs.push({
             question,
             answer: msg.text,
             score,
             agentId: msg.agent_id
           });
+        } else {
+          logger.debug({ sessionId, question: question.slice(0, 50), answer: msg.text.slice(0, 50), score, minQuality },
+            'Learning: par descartado por baja calidad');
         }
       }
 
