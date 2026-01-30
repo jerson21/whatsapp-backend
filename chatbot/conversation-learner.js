@@ -136,13 +136,13 @@ function createConversationLearner({ pool, logger, openai }) {
         const msg = messages[i];
 
         // Solo mensajes salientes de agentes humanos (no del bot)
-        if (msg.direction !== 'outgoing' || msg.is_ai_generated) continue;
+        if (msg.direction !== 'out' || msg.is_ai_generated) continue;
         if (!msg.text || msg.text.length < 10) continue;
 
         // Buscar la pregunta previa mas cercana (mensaje entrante)
         let question = null;
         for (let j = i - 1; j >= 0; j--) {
-          if (messages[j].direction === 'incoming' && messages[j].text) {
+          if (messages[j].direction === 'in' && messages[j].text) {
             question = messages[j].text;
             break;
           }
@@ -153,7 +153,7 @@ function createConversationLearner({ pool, logger, openai }) {
         if (isTrivialGreeting(question)) continue;
 
         // Siguiente mensaje del cliente (para scoring)
-        const nextClientMsg = messages.slice(i + 1).find(m => m.direction === 'incoming');
+        const nextClientMsg = messages.slice(i + 1).find(m => m.direction === 'in');
 
         const score = calculateQualityScore({
           question,
