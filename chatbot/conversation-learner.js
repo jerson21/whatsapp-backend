@@ -101,6 +101,134 @@ function calculateQualityScore({ question, answer, session, agentId, nextClientM
 function createConversationLearner({ pool, logger, openai }) {
 
   /**
+   * Extrae pares Q&A de una sesion usando IA para entender el contexto.
+   * Le pasa la conversacion completa a GPT-4o-mini y le pide que extraiga
+   * los pares pregunta/respuesta utiles para entrenar un chatbot de ventas.
+   */
+  async function extractPairsWithAI(messages, session) {
+    // Construir transcript legible para la IA
+    const transcript = messages
+      .filter(m => m.text && m.text.trim())
+      .map(m => `[${m.direction === 'in' ? 'CLIENTE' : 'AGENTE'}]: ${m.text.trim()}`)
+      .join('\n');
+
+    // Si el transcript es muy corto, no vale la pena
+    if (transcript.length < 50) return [];
+
+    // Truncar a ~4000 chars para no gastar tokens de mas
+    const truncated = transcript.length > 4000 ? transcript.slice(0, 4000) + '\n[...conversacion truncada]' : transcript;
+
+    const response = await openai.chat.completions.create({
+      model: process.env.OPENAI_MINI_MODEL || 'gpt-4o-mini',
+      temperature: 0,
+      max_tokens: 2000,
+      messages: [
+        {
+          role: 'system',
+          content: `Eres un experto en extraccion de conocimiento de conversaciones de venta.
+El negocio es una tienda de RESPALDOS DE CAMA (cabeceras/headboards) en Chile.
+
+Tu trabajo: analizar la conversacion entre CLIENTE y AGENTE, y extraer pares pregunta/respuesta que serian utiles para entrenar un chatbot de ventas.
+
+REGLAS:
+1. La "pregunta" debe representar lo que el cliente realmente quiere saber (puedes reformularla si el mensaje original es ambiguo, pero mantente fiel al intent)
+2. La "respuesta" debe ser la informacion util que dio el agente (puedes combinar multiples mensajes del agente si responden a la misma pregunta)
+3. Incluye info de precios, modelos, medidas, materiales, despacho, plazos, formas de pago
+4. NO incluyas saludos triviales (hola, gracias, ok, etc.)
+5. NO incluyas pares donde la respuesta no tiene info util
+6. Si el agente da informacion general del producto (como medidas de base, materiales, etc.) como parte de la venta, incluyela como parte de la respuesta
+7. Califica cada par con quality_score de 0-100 segun que tan util seria para entrenar al chatbot
+
+Responde SOLO con un JSON array. Ejemplo:
+[
+  {"question": "Cuanto cuesta el modelo Venecia King?", "answer": "El modelo Venecia King en lino gris claro esta a $65.000 oferta especial, mas $6.000 de envio. Total $71.000", "quality_score": 85},
+  {"question": "Cuanto demora el despacho a Santiago?", "answer": "El despacho dentro de Santiago tiene un costo de $5.000 y demora 3-5 dias habiles", "quality_score": 75}
+]
+
+Si no hay pares utiles, responde: []`
+        },
+        {
+          role: 'user',
+          content: truncated
+        }
+      ]
+    });
+
+    const content = response.choices[0]?.message?.content?.trim() || '[]';
+
+    // Extraer JSON array del response
+    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) {
+      logger.warn({ sessionId: session.id, content: content.slice(0, 200) }, 'Learning AI: respuesta no parseable');
+      return [];
+    }
+
+    const extracted = JSON.parse(jsonMatch[0]);
+    if (!Array.isArray(extracted)) return [];
+
+    // Validar estructura y filtrar
+    return extracted
+      .filter(p => p.question && p.answer && typeof p.quality_score === 'number')
+      .filter(p => p.question.length >= 5 && p.answer.length >= 10)
+      .filter(p => p.quality_score >= LEARNING_MIN_QUALITY())
+      .map(p => ({
+        question: p.question.trim(),
+        answer: p.answer.trim(),
+        score: Math.min(100, Math.max(0, p.quality_score)),
+        agentId: session.assigned_agent_id || null
+      }));
+  }
+
+  /**
+   * Extrae pares Q&A usando turnos (fallback cuando no hay OpenAI)
+   */
+  function extractPairsFromTurns(messages, session) {
+    const pairs = [];
+
+    // Agrupar mensajes en turnos conversacionales
+    const turns = [];
+    for (const msg of messages) {
+      if (!msg.text || msg.text.trim().length === 0) continue;
+      const lastTurn = turns[turns.length - 1];
+      if (lastTurn && lastTurn.direction === msg.direction) {
+        lastTurn.texts.push(msg.text);
+      } else {
+        turns.push({ direction: msg.direction, texts: [msg.text], isAi: msg.is_ai_generated });
+      }
+    }
+
+    for (let i = 0; i < turns.length - 1; i++) {
+      const questionTurn = turns[i];
+      const answerTurn = turns[i + 1];
+
+      if (questionTurn.direction !== 'in' || answerTurn.direction !== 'out') continue;
+      if (answerTurn.isAi) continue;
+
+      const questionTexts = questionTurn.texts.filter(t => !isTrivialGreeting(t) && t.length >= 3);
+      const question = questionTexts.join('\n').trim();
+      const answer = answerTurn.texts.join('\n').trim();
+
+      if (!question || question.length < 3) continue;
+      if (!answer || answer.length < 5) continue;
+
+      const nextClientTurn = turns.slice(i + 2).find(t => t.direction === 'in');
+      const nextClientMessage = nextClientTurn ? nextClientTurn.texts[0] : null;
+
+      const score = calculateQualityScore({
+        question, answer, session,
+        agentId: session.assigned_agent_id || null,
+        nextClientMessage
+      });
+
+      if (score >= LEARNING_MIN_QUALITY()) {
+        pairs.push({ question, answer, score, agentId: session.assigned_agent_id || null });
+      }
+    }
+
+    return pairs;
+  }
+
+  /**
    * Extrae pares Q&A de una sesion resuelta
    */
   async function extractFromSession(sessionId) {
@@ -121,13 +249,6 @@ function createConversationLearner({ pool, logger, openai }) {
         return;
       }
 
-      // Diagnostico: contar mensajes por tipo
-      const inMsgs = messages.filter(m => m.direction === 'in');
-      const outMsgs = messages.filter(m => m.direction === 'out');
-      const humanOutMsgs = outMsgs.filter(m => !m.is_ai_generated);
-      logger.info({ sessionId, total: messages.length, in: inMsgs.length, out: outMsgs.length, humanOut: humanOutMsgs.length },
-        'Learning: analizando sesion');
-
       // 2. Obtener info de la sesion
       const [sessions] = await pool.query(
         `SELECT s.id, s.escalation_status, s.channel, s.assigned_agent_id, a.role as agent_role
@@ -139,68 +260,18 @@ function createConversationLearner({ pool, logger, openai }) {
       const session = sessions[0];
       if (!session) return;
 
-      const pairs = [];
-
-      // 3. Agrupar mensajes en TURNOS conversacionales
-      //    Mensajes consecutivos del mismo direction se juntan en un turno.
-      //    Ejemplo: [in, in, out, out, out, in, out] → turnos: [in+in], [out+out+out], [in], [out]
-      const turns = [];
-      for (const msg of messages) {
-        if (!msg.text || msg.text.trim().length === 0) continue;
-        const lastTurn = turns[turns.length - 1];
-        if (lastTurn && lastTurn.direction === msg.direction) {
-          lastTurn.texts.push(msg.text);
-        } else {
-          turns.push({ direction: msg.direction, texts: [msg.text], isAi: msg.is_ai_generated });
+      // 3. Extraer pares: con IA si hay OpenAI, sino con turnos (fallback)
+      let pairs;
+      if (openai) {
+        try {
+          pairs = await extractPairsWithAI(messages, session);
+          logger.info({ sessionId, pairsFromAI: pairs.length }, 'Learning: pares extraidos con IA');
+        } catch (aiErr) {
+          logger.warn({ err: aiErr, sessionId }, 'Learning: IA fallo, usando fallback por turnos');
+          pairs = extractPairsFromTurns(messages, session);
         }
-      }
-
-      logger.debug({ sessionId, turnsCount: turns.length, turnDirections: turns.map(t => t.direction).join(',') },
-        'Learning: turnos detectados');
-
-      // 4. Recorrer turnos buscando pares [in-turn] → [out-turn]
-      for (let i = 0; i < turns.length - 1; i++) {
-        const questionTurn = turns[i];
-        const answerTurn = turns[i + 1];
-
-        // Solo pares in→out
-        if (questionTurn.direction !== 'in' || answerTurn.direction !== 'out') continue;
-
-        // Filtrar respuestas del bot
-        if (answerTurn.isAi) continue;
-
-        // Concatenar todos los mensajes del turno
-        const questionTexts = questionTurn.texts.filter(t => !isTrivialGreeting(t) && t.length >= 3);
-        const question = questionTexts.join('\n').trim();
-        const answer = answerTurn.texts.join('\n').trim();
-
-        if (!question || question.length < 3) continue;
-        if (!answer || answer.length < 5) continue;
-
-        // Siguiente turno del cliente (para scoring)
-        const nextClientTurn = turns.slice(i + 2).find(t => t.direction === 'in');
-        const nextClientMessage = nextClientTurn ? nextClientTurn.texts[0] : null;
-
-        const score = calculateQualityScore({
-          question,
-          answer,
-          session,
-          agentId: session.assigned_agent_id || null,
-          nextClientMessage
-        });
-
-        const minQuality = LEARNING_MIN_QUALITY();
-        if (score >= minQuality) {
-          pairs.push({
-            question,
-            answer,
-            score,
-            agentId: session.assigned_agent_id || null
-          });
-        } else {
-          logger.debug({ sessionId, question: question.slice(0, 50), answer: answer.slice(0, 50), score, minQuality },
-            'Learning: par descartado por baja calidad');
-        }
+      } else {
+        pairs = extractPairsFromTurns(messages, session);
       }
 
       if (pairs.length === 0) {
@@ -212,12 +283,11 @@ function createConversationLearner({ pool, logger, openai }) {
       const autoApprove = LEARNING_AUTO_APPROVE();
       let inserted = 0;
       for (const pair of pairs) {
-        // Verificar si ya existe un par con la misma sesion y pregunta
         const [[existing]] = await pool.query(
           `SELECT id FROM learned_qa_pairs WHERE session_id = ? AND question = ? LIMIT 1`,
           [sessionId, pair.question]
         );
-        if (existing) continue; // Ya fue extraido antes
+        if (existing) continue;
 
         const status = (autoApprove && pair.score >= AUTO_APPROVE_THRESHOLD) ? 'approved' : 'pending';
         await pool.query(
