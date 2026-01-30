@@ -266,11 +266,11 @@ function createConversationLearner({ pool, logger, openai }) {
       const params = [];
 
       if (from) {
-        query += ' AND s.updated_at >= ?';
+        query += ' AND s.created_at >= ?';
         params.push(from);
       }
       if (to) {
-        query += ' AND s.updated_at <= ?';
+        query += ' AND s.created_at <= ?';
         params.push(to);
       }
 
