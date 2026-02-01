@@ -185,10 +185,21 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
               return;
 
             case 'ai_fallback':
-              ssePush(sessionId, {
-                type: 'ai_fallback_response',
-                message: 'Respuesta generada por IA (sin flujo coincidente)'
-              });
+              // Notificar cada mensaje IA guardado en BD al frontend
+              if (flowResult.sentMessages && flowResult.sentMessages.length > 0) {
+                for (const msg of flowResult.sentMessages) {
+                  ssePush(sessionId, {
+                    type: 'message',
+                    direction: 'out',
+                    text: msg.text,
+                    msgId: msg.waMsgId,
+                    dbId: msg.dbId,
+                    status: 'sent',
+                    isAI: true,
+                    at: Date.now()
+                  });
+                }
+              }
               return;
 
             case 'personalized_greeting':

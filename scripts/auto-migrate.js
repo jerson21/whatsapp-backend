@@ -159,6 +159,11 @@ const migrations = [
             variables = '{}',
             updated_at = NOW()
           WHERE slug = 'embudo-ventas'`
+  },
+  {
+    name: 'add_custom_instructions_to_chatbot_config',
+    description: 'Agregar custom_instructions a chatbot_config',
+    sql: `ALTER TABLE chatbot_config ADD COLUMN custom_instructions TEXT NULL AFTER fallback_message`
   }
 ];
 

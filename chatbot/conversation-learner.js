@@ -137,7 +137,8 @@ REGLAS ESTRICTAS:
 4. Incluye info de precios, modelos, medidas, materiales, despacho, plazos, formas de pago — SOLO si el agente los menciono.
 5. NO incluyas saludos triviales (hola, gracias, ok, etc.)
 6. NO incluyas pares donde la respuesta no tiene info util
-7. Califica cada par con quality_score de 0-100 segun que tan util y completa es la respuesta del agente
+7. NO extraigas pares que contengan precios especificos, montos en pesos, valores numericos de productos o cotizaciones. Los precios cambian frecuentemente y se manejan por separado.
+8. Califica cada par con quality_score de 0-100 segun que tan util y completa es la respuesta del agente
 
 Responde SOLO con un JSON array. Ejemplo:
 [
@@ -166,11 +167,15 @@ Si no hay pares utiles, responde: []`
     const extracted = JSON.parse(jsonMatch[0]);
     if (!Array.isArray(extracted)) return [];
 
+    // Patron para detectar precios (pesos chilenos, dolares, montos)
+    const PRICE_PATTERN = /\$\s*[\d.,]+|[\d.,]+\s*pesos|CLP\s*[\d.,]+|[\d.,]+\s*CLP/i;
+
     // Validar estructura y filtrar
     return extracted
       .filter(p => p.question && p.answer && typeof p.quality_score === 'number')
       .filter(p => p.question.length >= 5 && p.answer.length >= 10)
       .filter(p => p.quality_score >= LEARNING_MIN_QUALITY())
+      .filter(p => !PRICE_PATTERN.test(p.answer)) // Excluir pares con precios
       .map(p => ({
         question: p.question.trim(),
         answer: p.answer.trim(),

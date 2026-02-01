@@ -97,3 +97,49 @@ export async function fetchBrainReport(force = false) {
   })
   return handleResponse(res)
 }
+
+// === CHATBOT CONFIG (instrucciones personalizadas) ===
+export async function fetchChatbotConfig() {
+  const res = await fetch('/api/chatbot/config', { headers: getHeaders() })
+  return handleResponse(res)
+}
+
+export async function updateChatbotConfig(data) {
+  const res = await fetch('/api/chatbot/config', {
+    method: 'PUT',
+    headers: getHeaders(),
+    body: JSON.stringify(data)
+  })
+  return handleResponse(res)
+}
+
+// === CURRENT PROMPT ===
+export async function fetchCurrentPrompt(phone = null) {
+  const qs = phone ? `?phone=${encodeURIComponent(phone)}` : ''
+  const res = await fetch(`/api/chatbot/current-prompt${qs}`, { headers: getHeaders() })
+  return handleResponse(res)
+}
+
+// === BOT CONVERSATIONS ===
+export async function fetchBotConversations(limit = 50, offset = 0) {
+  const res = await fetch(`/api/chat/bot-conversations?limit=${limit}&offset=${offset}`, {
+    headers: getHeaders()
+  })
+  return handleResponse(res)
+}
+
+export async function fetchBotConversationMessages(sessionId) {
+  const res = await fetch(`/api/chat/bot-conversations/${sessionId}/messages`, {
+    headers: getHeaders()
+  })
+  return handleResponse(res)
+}
+
+export async function correctBotMessage(sessionId, messageId, correctedAnswer) {
+  const res = await fetch(`/api/chat/bot-conversations/${sessionId}/correct`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({ messageId, correctedAnswer })
+  })
+  return handleResponse(res)
+}

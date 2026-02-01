@@ -19,6 +19,11 @@ class VisualFlowEngine {
     this.activeFlows = [];
     this.sessionStates = new Map(); // phone -> { flowId, currentNodeId, variables }
 
+    // Cache de configuración del chatbot (TTL 5 min)
+    this._cachedConfig = null;
+    this._configCacheTime = 0;
+    this._configCacheTTL = 5 * 60 * 1000;
+
     // Keywords globales que funcionan en cualquier momento
     this.globalKeywords = {
       'menu': { action: 'show_menu', response: '📋 *Menú Principal*\n\n¿En qué puedo ayudarte?\n\n1️⃣ Información de productos\n2️⃣ Soporte técnico\n3️⃣ Hablar con un agente\n4️⃣ Volver al inicio' },
@@ -84,6 +89,99 @@ class VisualFlowEngine {
       }
       return [];
     }
+  }
+
+  /**
+   * Cargar configuración del chatbot con cache
+   */
+  async loadChatbotConfig() {
+    const now = Date.now();
+    if (this._cachedConfig && (now - this._configCacheTime) < this._configCacheTTL) {
+      return this._cachedConfig;
+    }
+    try {
+      const [rows] = await this.db.query('SELECT * FROM chatbot_config ORDER BY id DESC LIMIT 1');
+      this._cachedConfig = rows[0] || null;
+      this._configCacheTime = now;
+      return this._cachedConfig;
+    } catch (err) {
+      logger.error({ err }, 'Error loading chatbot config');
+      return this._cachedConfig;
+    }
+  }
+
+  /**
+   * Invalidar cache de configuración (llamar después de guardar config)
+   */
+  invalidateConfigCache() {
+    this._cachedConfig = null;
+    this._configCacheTime = 0;
+    logger.info('Chatbot config cache invalidated');
+  }
+
+  /**
+   * Construir el prompt actual sin llamar a OpenAI (para panel "Ver Prompt")
+   */
+  async buildCurrentPrompt(phone) {
+    const savedFields = phone ? await this.loadContactFields(phone) : {};
+    const userName = savedFields.nombre || savedFields.name || '';
+
+    const fidelityLevel = process.env.LEARNING_FIDELITY_LEVEL || 'enhanced';
+    const fidelityInstruction = this._getFidelityInstruction(fidelityLevel);
+
+    let systemPrompt = `Eres un vendedor amable de Respaldos Chile que conversa por WhatsApp/Instagram.
+
+ESTILO:
+- Habla como una persona real, no como un catalogo
+- Usa lenguaje casual pero profesional (chileno neutro)
+- Haz preguntas para entender que necesita el cliente
+- Sugiere opciones en vez de listar todo
+- Cierra con una pregunta ("te interesa?", "en que color lo buscas?")
+- Maximo 3-4 lineas por mensaje
+${userName ? `- El cliente se llama ${userName}, usalo para personalizar` : '- (Nombre del cliente se inyecta si está disponible)'}
+
+NUNCA:
+- Listes especificaciones como ficha tecnica
+- Uses bullets o formatos de catalogo
+- Digas "Estimado/a cliente" ni "Le informamos que..."
+- Inventes precios o plazos que no estan en el contexto
+
+SI NO SABES:
+- "Dejame confirmarlo con el equipo y te respondo altiro"
+- NO inventes informacion`;
+
+    // Cargar instrucciones personalizadas
+    const config = await this.loadChatbotConfig();
+    if (config && config.custom_instructions) {
+      systemPrompt += `\n\n--- INSTRUCCIONES DEL ADMIN ---\n${config.custom_instructions}\n--- FIN INSTRUCCIONES ---`;
+    }
+
+    // Agregar instrucción de fidelidad
+    systemPrompt += `\n\n${fidelityInstruction}`;
+
+    // Contar conocimiento disponible
+    let knowledgeCount = 0;
+    let priceCount = 0;
+    try {
+      const [qaPairs] = await this.db.query("SELECT COUNT(*) as c FROM learned_qa_pairs WHERE status = 'approved'");
+      knowledgeCount = qaPairs[0]?.c || 0;
+    } catch (e) { /* tabla puede no existir */ }
+    try {
+      const [prices] = await this.db.query("SELECT COUNT(*) as c FROM product_prices WHERE active = 1");
+      priceCount = prices[0]?.c || 0;
+    } catch (e) { /* tabla puede no existir */ }
+
+    return {
+      systemPrompt,
+      fidelityLevel,
+      fidelityInstruction,
+      customInstructions: config?.custom_instructions || '',
+      knowledgeCount,
+      priceCount,
+      model: process.env.CHATBOT_AI_MODEL || 'gpt-4o-mini',
+      temperature: '0.3 (con conocimiento) / 0.5 (sin conocimiento)',
+      maxTokens: 350
+    };
   }
 
   /**
@@ -283,6 +381,12 @@ IMPORTANTE: Usa SOLO estos precios. Los precios en las respuestas del equipo pue
         systemPrompt += `\n\n${fidelityInstruction}`;
       }
 
+      // Inyectar instrucciones personalizadas del admin
+      const config = await this.loadChatbotConfig();
+      if (config && config.custom_instructions) {
+        systemPrompt += `\n\n--- INSTRUCCIONES DEL ADMIN ---\n${config.custom_instructions}\n--- FIN INSTRUCCIONES ---`;
+      }
+
       // --- Construir array de mensajes con historial ---
       const messages = [
         { role: 'system', content: systemPrompt }
@@ -316,25 +420,22 @@ IMPORTANTE: Usa SOLO estos precios. Los precios en las respuestas del equipo pue
         await this.sendTypingIndicator(context.waMsgId);
       }
 
-      // Enviar con delay realista y split si es necesario
-      const learningEnabled = String(process.env.LEARNING_ENABLED || 'false').toLowerCase() === 'true';
-      if (learningEnabled) {
-        await this._sendBotResponse(phone, responseText, context);
-      } else if (this.sendMessage) {
-        await this.sendMessage(phone, responseText);
-      }
+      // Enviar con delay realista y guardar en BD
+      const sentMessages = await this._sendBotResponse(phone, responseText, context);
 
       logger.info({
         phone,
         response: responseText.slice(0, 80),
         contextUsed: knowledgeContext.length,
         pricesUsed: priceContext.length,
-        historyTurns: recentHistory.length
+        historyTurns: recentHistory.length,
+        messagesSaved: sentMessages.length
       }, '🤖 AI fallback response sent');
 
       return {
         type: 'ai_fallback',
         text: responseText,
+        sentMessages,
         handled: true
       };
 
@@ -414,11 +515,15 @@ IMPORTANTE: Usa SOLO estos precios. Los precios en las respuestas del equipo pue
   }
 
   /**
-   * Envia respuesta con delay realista y dividida en multiples mensajes
+   * Envia respuesta con delay realista, dividida en multiples mensajes,
+   * y guarda cada parte en chat_messages con is_ai_generated=1
+   * @returns {Array} Array de { waMsgId, dbId, text } por cada mensaje enviado
    */
   async _sendBotResponse(phone, fullText, context = {}) {
     const parts = this._splitResponse(fullText);
     const waMsgId = context.waMsgId;
+    const sessionId = context.sessionId;
+    const sentMessages = [];
 
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
@@ -433,15 +538,35 @@ IMPORTANTE: Usa SOLO estos precios. Los precios en las respuestas del equipo pue
       await new Promise(resolve => setTimeout(resolve, delay));
 
       // Enviar parte
+      let msgId = null;
       if (this.sendMessage) {
-        await this.sendMessage(phone, part);
+        msgId = await this.sendMessage(phone, part);
       }
+
+      // Guardar en BD con is_ai_generated = 1
+      let dbId = null;
+      if (sessionId && msgId) {
+        try {
+          const [result] = await this.db.query(
+            `INSERT INTO chat_messages (session_id, direction, text, wa_jid, wa_msg_id, status, is_ai_generated)
+             VALUES (?, 'out', ?, ?, ?, 'sent', 1)`,
+            [sessionId, part, phone, msgId]
+          );
+          dbId = result.insertId;
+        } catch (err) {
+          logger.error({ err, sessionId, msgId }, 'Error saving AI message to DB');
+        }
+      }
+
+      sentMessages.push({ waMsgId: msgId, dbId, text: part });
 
       // Pausa extra entre mensajes
       if (i < parts.length - 1) {
         await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
+
+    return sentMessages;
   }
 
   /**

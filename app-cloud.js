@@ -4899,7 +4899,8 @@ app.get('/api/chatbot/config', async (req, res) => {
           min_confidence: 75
         },
         welcome_message: '¡Hola! Soy el asistente virtual de Respaldos Chile. ¿En qué puedo ayudarte hoy?',
-        fallback_message: 'Gracias por tu mensaje. Un representante te atenderá pronto.'
+        fallback_message: 'Gracias por tu mensaje. Un representante te atenderá pronto.',
+        custom_instructions: ''
       };
       return res.json({ ok: true, config: defaultConfig });
     }
@@ -4935,6 +4936,7 @@ app.put('/api/chatbot/config', async (req, res) => {
       personality_settings,
       welcome_message,
       fallback_message,
+      custom_instructions,
       active_days,
       work_hour_start,
       work_hour_end,
@@ -4971,11 +4973,12 @@ app.put('/api/chatbot/config', async (req, res) => {
       await pool.query(`
         INSERT INTO chatbot_config (
           bot_enabled, auto_mode, ai_model, ai_temperature, ai_max_tokens,
-          response_timeout, personality_settings, welcome_message, fallback_message
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          response_timeout, personality_settings, welcome_message, fallback_message, custom_instructions
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         bot_enabled, auto_mode, ai_model, ai_temperature, ai_max_tokens,
-        response_timeout, JSON.stringify(extendedSettings), welcome_message, fallback_message
+        response_timeout, JSON.stringify(extendedSettings), welcome_message, fallback_message,
+        custom_instructions || ''
       ]);
     } else {
       // Actualizar configuración existente
@@ -4983,12 +4986,12 @@ app.put('/api/chatbot/config', async (req, res) => {
         UPDATE chatbot_config SET
           bot_enabled = ?, auto_mode = ?, ai_model = ?, ai_temperature = ?,
           ai_max_tokens = ?, response_timeout = ?, personality_settings = ?,
-          welcome_message = ?, fallback_message = ?
+          welcome_message = ?, fallback_message = ?, custom_instructions = ?
         WHERE id = ?
       `, [
         bot_enabled, auto_mode, ai_model, ai_temperature, ai_max_tokens,
-        response_timeout, JSON.stringify(extendedSettings), welcome_message, 
-        fallback_message, existing[0].id
+        response_timeout, JSON.stringify(extendedSettings), welcome_message,
+        fallback_message, custom_instructions || '', existing[0].id
       ]);
     }
     
@@ -4996,7 +4999,15 @@ app.put('/api/chatbot/config', async (req, res) => {
     if (bot_enabled !== undefined) {
       chatbotGlobalEnabled = bot_enabled;
     }
-    
+
+    // Invalidar cache del motor IA para que tome las nuevas instrucciones
+    try {
+      const engine = getVisualFlowEngine();
+      if (engine && typeof engine.invalidateConfigCache === 'function') {
+        engine.invalidateConfigCache();
+      }
+    } catch (e) { /* engine may not be ready yet */ }
+
     res.json({ ok: true, message: 'Configuración actualizada correctamente' });
   } catch (e) {
     logger.error({ e }, 'PUT /api/chatbot/config error');
@@ -5825,8 +5836,140 @@ app.post('/api/chat/reset-escalation', express.json(), async (req, res) => {
   }
 });
 
+/* ========= Bot Conversations & Current Prompt Endpoints ========= */
+
+// Listar conversaciones donde el bot respondió (con is_ai_generated=1)
+app.get('/api/chat/bot-conversations', panelAuth, async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const offset = Number(req.query.offset) || 0;
+
+    const [conversations] = await pool.query(`
+      SELECT
+        s.id AS sessionId,
+        s.phone,
+        s.status,
+        s.chatbot_mode,
+        s.created_at,
+        s.updated_at,
+        (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id = s.id AND m.is_ai_generated = 1) AS ai_message_count,
+        (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id = s.id) AS total_messages,
+        (SELECT m.text FROM chat_messages m WHERE m.session_id = s.id ORDER BY m.id DESC LIMIT 1) AS last_message,
+        (SELECT m.created_at FROM chat_messages m WHERE m.session_id = s.id ORDER BY m.id DESC LIMIT 1) AS last_message_at
+      FROM chat_sessions s
+      WHERE EXISTS (
+        SELECT 1 FROM chat_messages m WHERE m.session_id = s.id AND m.is_ai_generated = 1
+      )
+      ORDER BY s.updated_at DESC
+      LIMIT ? OFFSET ?
+    `, [limit, offset]);
+
+    const [[{ total }]] = await pool.query(`
+      SELECT COUNT(*) as total FROM chat_sessions s
+      WHERE EXISTS (SELECT 1 FROM chat_messages m WHERE m.session_id = s.id AND m.is_ai_generated = 1)
+    `);
+
+    res.json({ ok: true, conversations, total, limit, offset });
+  } catch (e) {
+    logger.error({ e }, 'GET /api/chat/bot-conversations error');
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Obtener mensajes de una conversación con marcadores de IA
+app.get('/api/chat/bot-conversations/:sessionId/messages', panelAuth, async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const [messages] = await pool.query(`
+      SELECT id, direction, text, is_ai_generated, status, created_at, wa_msg_id
+      FROM chat_messages
+      WHERE session_id = ? AND text IS NOT NULL AND text != ''
+      ORDER BY created_at ASC
+    `, [sessionId]);
+
+    res.json({ ok: true, messages });
+  } catch (e) {
+    logger.error({ e }, 'GET /api/chat/bot-conversations/:sessionId/messages error');
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Corregir respuesta del bot → crea Q&A pair aprobado
+app.post('/api/chat/bot-conversations/:sessionId/correct', panelAuth, async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { messageId, correctedAnswer } = req.body || {};
+
+    if (!messageId || !correctedAnswer) {
+      return res.status(400).json({ ok: false, error: 'messageId y correctedAnswer requeridos' });
+    }
+
+    // Obtener el mensaje original del bot
+    const [[botMsg]] = await pool.query(
+      `SELECT id, text, session_id FROM chat_messages WHERE id = ? AND session_id = ? AND direction = 'out'`,
+      [messageId, sessionId]
+    );
+    if (!botMsg) {
+      return res.status(404).json({ ok: false, error: 'Mensaje no encontrado' });
+    }
+
+    // Buscar la pregunta del cliente (último mensaje 'in' antes de este mensaje)
+    const [[clientMsg]] = await pool.query(
+      `SELECT text FROM chat_messages
+       WHERE session_id = ? AND direction = 'in' AND id < ? AND text IS NOT NULL AND text != ''
+       ORDER BY id DESC LIMIT 1`,
+      [sessionId, messageId]
+    );
+    const question = clientMsg?.text || 'Consulta general';
+
+    // Crear Q&A pair aprobado automáticamente con la corrección
+    const [result] = await pool.query(
+      `INSERT INTO learned_qa_pairs (session_id, question, answer, quality_score, status, channel)
+       VALUES (?, ?, ?, 100, 'approved', 'correction')`,
+      [sessionId, question, correctedAnswer]
+    );
+
+    // Marcar el mensaje original como corregido (agregar metadata)
+    await pool.query(
+      `UPDATE chat_messages SET status = 'corrected' WHERE id = ?`,
+      [messageId]
+    );
+
+    logger.info({ sessionId, messageId, pairId: result.insertId }, 'Bot message corrected, Q&A pair created');
+
+    res.json({
+      ok: true,
+      pairId: result.insertId,
+      question,
+      correctedAnswer,
+      message: 'Corrección guardada como par Q&A aprobado'
+    });
+  } catch (e) {
+    logger.error({ e }, 'POST /api/chat/bot-conversations/:sessionId/correct error');
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Ver el prompt actual que se envía a OpenAI
+app.get('/api/chatbot/current-prompt', panelAuth, async (req, res) => {
+  try {
+    const engine = getVisualFlowEngine();
+    if (!engine || typeof engine.buildCurrentPrompt !== 'function') {
+      return res.status(500).json({ ok: false, error: 'Visual Flow Engine no disponible' });
+    }
+
+    const phone = req.query.phone || null;
+    const promptData = await engine.buildCurrentPrompt(phone);
+
+    res.json({ ok: true, ...promptData });
+  } catch (e) {
+    logger.error({ e }, 'GET /api/chatbot/current-prompt error');
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 /* ========= Start Server ========= */
-const { registerRoutes, handleChatbotMessage, setSessionMode, clearSessionState, reloadVisualFlows } = createChatbot({
+const { registerRoutes, handleChatbotMessage, setSessionMode, clearSessionState, reloadVisualFlows, getVisualFlowEngine } = createChatbot({
   pool,
   logger,
   ssePush,
