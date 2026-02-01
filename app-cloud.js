@@ -5851,7 +5851,6 @@ app.get('/api/chat/bot-conversations', panelAuth, async (req, res) => {
         s.status,
         s.chatbot_mode,
         s.created_at,
-        s.updated_at,
         (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id = s.id AND m.is_ai_generated = 1) AS ai_message_count,
         (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id = s.id) AS total_messages,
         (SELECT m.text FROM chat_messages m WHERE m.session_id = s.id ORDER BY m.id DESC LIMIT 1) AS last_message,
@@ -5860,7 +5859,7 @@ app.get('/api/chat/bot-conversations', panelAuth, async (req, res) => {
       WHERE EXISTS (
         SELECT 1 FROM chat_messages m WHERE m.session_id = s.id AND m.is_ai_generated = 1
       )
-      ORDER BY s.updated_at DESC
+      ORDER BY (SELECT MAX(m.created_at) FROM chat_messages m WHERE m.session_id = s.id) DESC
       LIMIT ? OFFSET ?
     `, [limit, offset]);
 
