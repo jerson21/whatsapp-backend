@@ -4956,8 +4956,8 @@ app.put('/api/chatbot/config', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'ai_max_tokens debe estar entre 1 y 4000' });
     }
     
-    // Verificar si existe configuración
-    const [existing] = await pool.query('SELECT id FROM chatbot_config LIMIT 1');
+    // Verificar si existe configuración (ORDER BY id DESC para consistencia con GET)
+    const [existing] = await pool.query('SELECT id FROM chatbot_config ORDER BY id DESC LIMIT 1');
     
     // Crear configuración extendida que incluye todos los campos
     const extendedSettings = {
@@ -5012,7 +5012,16 @@ app.put('/api/chatbot/config', async (req, res) => {
       }
     } catch (e) { /* engine may not be ready yet */ }
 
-    res.json({ ok: true, message: 'Configuración actualizada correctamente' });
+    // Leer la config guardada para confirmar persistencia
+    const [savedRows] = await pool.query('SELECT * FROM chatbot_config ORDER BY id DESC LIMIT 1');
+    const savedConfig = savedRows[0] || {};
+    if (savedConfig.personality_settings && typeof savedConfig.personality_settings === 'string') {
+      try { savedConfig.personality_settings = JSON.parse(savedConfig.personality_settings); } catch (e) {}
+    }
+
+    logger.info({ custom_instructions: (savedConfig.custom_instructions || '').substring(0, 50), system_prompt: (savedConfig.system_prompt || '').substring(0, 50) }, 'PUT /api/chatbot/config saved');
+
+    res.json({ ok: true, message: 'Configuración actualizada correctamente', config: savedConfig });
   } catch (e) {
     logger.error({ e }, 'PUT /api/chatbot/config error');
     res.status(500).json({ ok: false, error: e.message });
