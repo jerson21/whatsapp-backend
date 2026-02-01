@@ -10,7 +10,7 @@
 const VisualFlowEngine = require('./visual-flow-engine');
 const MessageClassifier = require('./message-classifier');
 
-function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInteractiveButtons, sendInteractiveList, emitFlowEvent, autoAssignDepartment, knowledgeRetriever }) {
+function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInteractiveButtons, sendInteractiveList, sendTypingIndicator, emitFlowEvent, autoAssignDepartment, knowledgeRetriever }) {
   // Configuración
   const CHATBOT_MODE_DEFAULT = process.env.CHATBOT_MODE_DEFAULT || 'automatic';
   const CHATBOT_AUTO_REPLY_DELAY = Number(process.env.CHATBOT_AUTO_REPLY_DELAY || 1000);
@@ -30,7 +30,8 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
     emitFlowEvent,
     sendInteractiveButtons,
     sendInteractiveList,
-    knowledgeRetriever || null
+    knowledgeRetriever || null,
+    sendTypingIndicator || null
   );
 
   // Cargar flujos activos al inicio
@@ -50,7 +51,7 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
    * 2. Intentar Visual Flow Engine
    * 3. Si no hay match → Enviar fallback
    */
-  async function handleChatbotMessage({ sessionId, phone, text, buttonId }) {
+  async function handleChatbotMessage({ sessionId, phone, text, buttonId, waMsgId }) {
     try {
       logger.info({ sessionId, phone, text: text?.slice(0, 50) }, '🤖 handleChatbotMessage INICIADO');
 
@@ -113,7 +114,8 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
         const flowResult = await visualFlowEngine.processMessage(phone, normalized, {
           sessionId,
           phone,
-          buttonId // ID del botón interactivo si el usuario presionó uno
+          buttonId, // ID del botón interactivo si el usuario presionó uno
+          waMsgId   // ID del mensaje entrante para typing indicator
         });
 
         if (flowResult) {

@@ -7,7 +7,7 @@ const logger = require('pino')({ level: process.env.LOG_LEVEL || 'info' });
 const OpenAI = require('openai');
 
 class VisualFlowEngine {
-  constructor(dbPool, classifier, sendMessage, emitFlowEvent = null, sendInteractiveButtons = null, sendInteractiveList = null, knowledgeRetriever = null) {
+  constructor(dbPool, classifier, sendMessage, emitFlowEvent = null, sendInteractiveButtons = null, sendInteractiveList = null, knowledgeRetriever = null, sendTypingIndicator = null) {
     this.db = dbPool;
     this.classifier = classifier;
     this.sendMessage = sendMessage; // Función para enviar mensajes de texto a WhatsApp
@@ -15,6 +15,7 @@ class VisualFlowEngine {
     this.sendInteractiveList = sendInteractiveList; // Función para enviar listas interactivas
     this.emitFlowEvent = emitFlowEvent; // Función para emitir eventos al monitor
     this.knowledgeRetriever = knowledgeRetriever; // Sistema de aprendizaje (puede ser null)
+    this.sendTypingIndicator = sendTypingIndicator; // Función para enviar indicador de "escribiendo..."
     this.activeFlows = [];
     this.sessionStates = new Map(); // phone -> { flowId, currentNodeId, variables }
 
@@ -310,10 +311,15 @@ IMPORTANTE: Usa SOLO estos precios. Los precios en las respuestas del equipo pue
 
       const responseText = aiResponse.choices[0]?.message?.content || 'Gracias por tu mensaje. ¿En qué puedo ayudarte?';
 
+      // Enviar typing indicator antes de responder
+      if (this.sendTypingIndicator && context.waMsgId) {
+        await this.sendTypingIndicator(context.waMsgId);
+      }
+
       // Enviar con delay realista y split si es necesario
       const learningEnabled = String(process.env.LEARNING_ENABLED || 'false').toLowerCase() === 'true';
       if (learningEnabled) {
-        await this._sendBotResponse(phone, responseText);
+        await this._sendBotResponse(phone, responseText, context);
       } else if (this.sendMessage) {
         await this.sendMessage(phone, responseText);
       }
@@ -410,11 +416,17 @@ IMPORTANTE: Usa SOLO estos precios. Los precios en las respuestas del equipo pue
   /**
    * Envia respuesta con delay realista y dividida en multiples mensajes
    */
-  async _sendBotResponse(phone, fullText) {
+  async _sendBotResponse(phone, fullText, context = {}) {
     const parts = this._splitResponse(fullText);
+    const waMsgId = context.waMsgId;
 
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
+
+      // Enviar typing indicator antes de cada parte
+      if (this.sendTypingIndicator && waMsgId) {
+        await this.sendTypingIndicator(waMsgId);
+      }
 
       // Delay proporcional al texto
       const delay = this._calculateTypingDelay(part);
@@ -602,6 +614,7 @@ IMPORTANTE: Usa SOLO estos precios. Los precios en las respuestas del equipo pue
         ...savedFields,  // Incluir datos guardados del usuario
         ...context
       },
+      context,          // Contexto original (contiene waMsgId para typing indicator)
       startedAt: new Date(),
       executionLogId  // Store log ID in session
     };
@@ -937,6 +950,11 @@ IMPORTANTE: Usa SOLO estos precios. Los precios en las respuestas del equipo pue
       case 'message':
         const messageText = this.replaceVariables(node.content || '', sessionState.variables);
 
+        // Enviar typing indicator antes del mensaje
+        if (this.sendTypingIndicator && sessionState.context?.waMsgId) {
+          await this.sendTypingIndicator(sessionState.context.waMsgId);
+        }
+
         // Enviar mensaje
         if (this.sendMessage) {
           await this.sendMessage(phone, messageText);
@@ -1147,6 +1165,11 @@ IMPORTANTE: Usa SOLO estos precios. Los precios en las respuestas del equipo pue
             sessionState.variables[node.variable] = aiText;
           }
 
+          // Enviar typing indicator antes de la respuesta AI
+          if (this.sendTypingIndicator && sessionState.context?.waMsgId) {
+            await this.sendTypingIndicator(sessionState.context.waMsgId);
+          }
+
           // Send the AI response
           if (this.sendMessage) {
             await this.sendMessage(phone, aiText);
@@ -1278,9 +1301,8 @@ IMPORTANTE: Usa SOLO estos precios. Los precios en las respuestas del equipo pue
 
         logger.debug({ delaySeconds, showTyping }, 'Executing delay node');
 
-        // TODO: If typing indicator is supported by WhatsApp API, send it here
-        if (showTyping && this.sendTypingIndicator) {
-          await this.sendTypingIndicator(phone);
+        if (showTyping && this.sendTypingIndicator && sessionState?.context?.waMsgId) {
+          await this.sendTypingIndicator(sessionState.context.waMsgId);
         }
 
         await logStep(`Delay: ${delaySeconds} seconds`);

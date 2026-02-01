@@ -1447,6 +1447,42 @@ async function sendTextViaCloudAPI(toE164, body, sessionId = null) {
   return json.messages?.[0]?.id || null;
 }
 
+/**
+ * Envía indicador de "escribiendo..." al usuario via WhatsApp Cloud API.
+ * Requiere el message_id del mensaje entrante al que se está respondiendo.
+ * El indicador se muestra hasta 25 segundos o hasta que se envíe la respuesta.
+ */
+async function sendTypingIndicator(messageId) {
+  if (!META_ACCESS_TOKEN || !WABA_PHONE_NUMBER_ID || !messageId) {
+    return; // Sin credenciales o sin messageId, no hacer nada
+  }
+
+  try {
+    const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${WABA_PHONE_NUMBER_ID}/messages`;
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${META_ACCESS_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        status: 'read',
+        message_id: messageId,
+        typing_indicator: { type: 'text' }
+      })
+    });
+
+    if (!r.ok) {
+      const json = await r.json().catch(() => ({}));
+      logger.debug({ messageId, error: json?.error?.message }, 'Typing indicator failed (non-critical)');
+    }
+  } catch (e) {
+    // No-op: typing indicator es best-effort, no debe afectar el flujo
+    logger.debug({ messageId, error: e.message }, 'Typing indicator error (non-critical)');
+  }
+}
+
 async function sendTemplateViaCloudAPI(toE164, templateName, languageCode, components) {
   const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${WABA_PHONE_NUMBER_ID}/messages`;
   const payload = {
@@ -2159,11 +2195,12 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                 text: textForDB?.slice(0, 50),
                 buttonId: interactiveId
               }, '🤖 EJECUTANDO chatbot unificado');
-              handleChatbotMessage({ 
-                sessionId, 
-                phone: from, 
+              handleChatbotMessage({
+                sessionId,
+                phone: from,
                 text: textForDB,
-                buttonId: interactiveId 
+                buttonId: interactiveId,
+                waMsgId
               }).catch((e) => logger.error({ e }, 'chatbot handler error'));
             } else {
               logger.info({ 
@@ -5796,6 +5833,7 @@ const { registerRoutes, handleChatbotMessage, setSessionMode, clearSessionState,
   sendTextViaCloudAPI,
   sendInteractiveButtons,
   sendInteractiveList,
+  sendTypingIndicator,
   emitFlowEvent: flowMonitorRoutes.emitFlowEvent,
   autoAssignDepartment,
   knowledgeRetriever
