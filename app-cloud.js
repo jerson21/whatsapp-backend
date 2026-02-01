@@ -4900,7 +4900,8 @@ app.get('/api/chatbot/config', async (req, res) => {
         },
         welcome_message: '¡Hola! Soy el asistente virtual de Respaldos Chile. ¿En qué puedo ayudarte hoy?',
         fallback_message: 'Gracias por tu mensaje. Un representante te atenderá pronto.',
-        custom_instructions: ''
+        custom_instructions: '',
+        system_prompt: ''
       };
       return res.json({ ok: true, config: defaultConfig });
     }
@@ -4937,6 +4938,7 @@ app.put('/api/chatbot/config', async (req, res) => {
       welcome_message,
       fallback_message,
       custom_instructions,
+      system_prompt,
       active_days,
       work_hour_start,
       work_hour_end,
@@ -4973,12 +4975,13 @@ app.put('/api/chatbot/config', async (req, res) => {
       await pool.query(`
         INSERT INTO chatbot_config (
           bot_enabled, auto_mode, ai_model, ai_temperature, ai_max_tokens,
-          response_timeout, personality_settings, welcome_message, fallback_message, custom_instructions
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          response_timeout, personality_settings, welcome_message, fallback_message,
+          custom_instructions, system_prompt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         bot_enabled, auto_mode, ai_model, ai_temperature, ai_max_tokens,
         response_timeout, JSON.stringify(extendedSettings), welcome_message, fallback_message,
-        custom_instructions || ''
+        custom_instructions || '', system_prompt || null
       ]);
     } else {
       // Actualizar configuración existente
@@ -4986,12 +4989,13 @@ app.put('/api/chatbot/config', async (req, res) => {
         UPDATE chatbot_config SET
           bot_enabled = ?, auto_mode = ?, ai_model = ?, ai_temperature = ?,
           ai_max_tokens = ?, response_timeout = ?, personality_settings = ?,
-          welcome_message = ?, fallback_message = ?, custom_instructions = ?
+          welcome_message = ?, fallback_message = ?, custom_instructions = ?,
+          system_prompt = ?
         WHERE id = ?
       `, [
         bot_enabled, auto_mode, ai_model, ai_temperature, ai_max_tokens,
         response_timeout, JSON.stringify(extendedSettings), welcome_message,
-        fallback_message, custom_instructions || '', existing[0].id
+        fallback_message, custom_instructions || '', system_prompt || null, existing[0].id
       ]);
     }
     

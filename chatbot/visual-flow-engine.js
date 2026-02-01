@@ -120,16 +120,10 @@ class VisualFlowEngine {
   }
 
   /**
-   * Construir el prompt actual sin llamar a OpenAI (para panel "Ver Prompt")
+   * Prompt por defecto (fallback si no hay system_prompt en la BD)
    */
-  async buildCurrentPrompt(phone) {
-    const savedFields = phone ? await this.loadContactFields(phone) : {};
-    const userName = savedFields.nombre || savedFields.name || '';
-
-    const fidelityLevel = process.env.LEARNING_FIDELITY_LEVEL || 'enhanced';
-    const fidelityInstruction = this._getFidelityInstruction(fidelityLevel);
-
-    let systemPrompt = `Eres un vendedor amable de Respaldos Chile que conversa por WhatsApp/Instagram.
+  _getDefaultSystemPrompt(userName) {
+    return `Eres un vendedor amable de Respaldos Chile que conversa por WhatsApp/Instagram.
 
 ESTILO:
 - Habla como una persona real, no como un catalogo
@@ -138,7 +132,7 @@ ESTILO:
 - Sugiere opciones en vez de listar todo
 - Cierra con una pregunta ("te interesa?", "en que color lo buscas?")
 - Maximo 3-4 lineas por mensaje
-${userName ? `- El cliente se llama ${userName}, usalo para personalizar` : '- (Nombre del cliente se inyecta si está disponible)'}
+${userName ? `- El cliente se llama ${userName}, usalo para personalizar` : ''}
 
 NUNCA:
 - Listes especificaciones como ficha tecnica
@@ -149,9 +143,37 @@ NUNCA:
 SI NO SABES:
 - "Dejame confirmarlo con el equipo y te respondo altiro"
 - NO inventes informacion`;
+  }
+
+  /**
+   * Construir el system prompt base: usa el de la BD si existe, sino el default
+   */
+  _buildBaseSystemPrompt(config, userName) {
+    if (config && config.system_prompt && config.system_prompt.trim()) {
+      // Reemplazar {{nombre}} por el nombre del cliente si está disponible
+      let prompt = config.system_prompt;
+      if (userName) {
+        prompt = prompt.replace(/\{\{nombre\}\}/gi, userName);
+      }
+      return prompt;
+    }
+    return this._getDefaultSystemPrompt(userName);
+  }
+
+  /**
+   * Construir el prompt actual sin llamar a OpenAI (para panel "Ver Prompt")
+   */
+  async buildCurrentPrompt(phone) {
+    const savedFields = phone ? await this.loadContactFields(phone) : {};
+    const userName = savedFields.nombre || savedFields.name || '';
+
+    const fidelityLevel = process.env.LEARNING_FIDELITY_LEVEL || 'enhanced';
+    const fidelityInstruction = this._getFidelityInstruction(fidelityLevel);
+
+    const config = await this.loadChatbotConfig();
+    let systemPrompt = this._buildBaseSystemPrompt(config, userName || '(se inyecta si está disponible)');
 
     // Cargar instrucciones personalizadas
-    const config = await this.loadChatbotConfig();
     if (config && config.custom_instructions) {
       systemPrompt += `\n\n--- INSTRUCCIONES DEL ADMIN ---\n${config.custom_instructions}\n--- FIN INSTRUCCIONES ---`;
     }
@@ -173,6 +195,7 @@ SI NO SABES:
 
     return {
       systemPrompt,
+      isCustomSystemPrompt: !!(config && config.system_prompt && config.system_prompt.trim()),
       fidelityLevel,
       fidelityInstruction,
       customInstructions: config?.custom_instructions || '',
@@ -336,26 +359,8 @@ SI NO SABES:
       const fidelityLevel = process.env.LEARNING_FIDELITY_LEVEL || 'enhanced';
       const fidelityInstruction = this._getFidelityInstruction(fidelityLevel);
 
-      let systemPrompt = `Eres un vendedor amable de Respaldos Chile que conversa por WhatsApp/Instagram.
-
-ESTILO:
-- Habla como una persona real, no como un catalogo
-- Usa lenguaje casual pero profesional (chileno neutro)
-- Haz preguntas para entender que necesita el cliente
-- Sugiere opciones en vez de listar todo
-- Cierra con una pregunta ("te interesa?", "en que color lo buscas?")
-- Maximo 3-4 lineas por mensaje
-${userName ? `- El cliente se llama ${userName}, usalo para personalizar` : ''}
-
-NUNCA:
-- Listes especificaciones como ficha tecnica
-- Uses bullets o formatos de catalogo
-- Digas "Estimado/a cliente" ni "Le informamos que..."
-- Inventes precios o plazos que no estan en el contexto
-
-SI NO SABES:
-- "Dejame confirmarlo con el equipo y te respondo altiro"
-- NO inventes informacion`;
+      const config = await this.loadChatbotConfig();
+      let systemPrompt = this._buildBaseSystemPrompt(config, userName);
 
       // Inyectar conocimiento aprendido
       if (knowledgeContext.length > 0) {
@@ -382,7 +387,6 @@ IMPORTANTE: Usa SOLO estos precios. Los precios en las respuestas del equipo pue
       }
 
       // Inyectar instrucciones personalizadas del admin
-      const config = await this.loadChatbotConfig();
       if (config && config.custom_instructions) {
         systemPrompt += `\n\n--- INSTRUCCIONES DEL ADMIN ---\n${config.custom_instructions}\n--- FIN INSTRUCCIONES ---`;
       }

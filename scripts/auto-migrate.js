@@ -164,6 +164,11 @@ const migrations = [
     name: 'add_custom_instructions_to_chatbot_config',
     description: 'Agregar custom_instructions a chatbot_config',
     sql: `ALTER TABLE chatbot_config ADD COLUMN custom_instructions TEXT NULL AFTER fallback_message`
+  },
+  {
+    name: 'add_system_prompt_to_chatbot_config',
+    description: 'Agregar system_prompt editable a chatbot_config',
+    sql: `ALTER TABLE chatbot_config ADD COLUMN system_prompt TEXT NULL AFTER custom_instructions`
   }
 ];
 

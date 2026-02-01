@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS chatbot_config (
     welcome_message TEXT NULL COMMENT 'Mensaje de bienvenida personalizado',
     fallback_message TEXT NULL COMMENT 'Mensaje cuando no se detecta intención',
     custom_instructions TEXT NULL COMMENT 'Instrucciones personalizadas del admin para el prompt de IA',
+    system_prompt TEXT NULL COMMENT 'System prompt editable — personalidad y reglas base de la IA',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Fecha de creación',
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Fecha de última actualización',
     

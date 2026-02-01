@@ -5,7 +5,7 @@ import {
   ChevronLeft, ChevronRight, Sparkles,
   AlertTriangle, TrendingUp, Shield, Zap,
   Eye, Target, FileText, MessageSquare, Save,
-  Code, ArrowLeft, PenLine
+  Code, ArrowLeft, PenLine, RotateCcw
 } from 'lucide-react'
 import StatsCard from '../components/StatsCard'
 import {
@@ -841,9 +841,31 @@ function PricesSection() {
 // SECCION: INSTRUCCIONES PERSONALIZADAS
 // =============================================
 
+const DEFAULT_SYSTEM_PROMPT = `Eres un vendedor amable de Respaldos Chile que conversa por WhatsApp/Instagram.
+
+ESTILO:
+- Habla como una persona real, no como un catalogo
+- Usa lenguaje casual pero profesional (chileno neutro)
+- Haz preguntas para entender que necesita el cliente
+- Sugiere opciones en vez de listar todo
+- Cierra con una pregunta ("te interesa?", "en que color lo buscas?")
+- Maximo 3-4 lineas por mensaje
+
+NUNCA:
+- Listes especificaciones como ficha tecnica
+- Uses bullets o formatos de catalogo
+- Digas "Estimado/a cliente" ni "Le informamos que..."
+- Inventes precios o plazos que no estan en el contexto
+
+SI NO SABES:
+- "Dejame confirmarlo con el equipo y te respondo altiro"
+- NO inventes informacion`
+
 function InstructionsSection() {
   const [fullConfig, setFullConfig] = useState(null)
   const [instructions, setInstructions] = useState('')
+  const [systemPrompt, setSystemPrompt] = useState('')
+  const [showSystemPrompt, setShowSystemPrompt] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -861,6 +883,8 @@ function InstructionsSection() {
       const data = await fetchChatbotConfig()
       setFullConfig(data.config)
       setInstructions(data.config?.custom_instructions || '')
+      setSystemPrompt(data.config?.system_prompt || '')
+      if (data.config?.system_prompt) setShowSystemPrompt(true)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -873,8 +897,11 @@ function InstructionsSection() {
     setSaved(false)
     setError('')
     try {
-      // Enviar config completa con instrucciones actualizadas
-      await updateChatbotConfig({ ...fullConfig, custom_instructions: instructions })
+      await updateChatbotConfig({
+        ...fullConfig,
+        custom_instructions: instructions,
+        system_prompt: systemPrompt || null
+      })
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (err) {
@@ -926,22 +953,73 @@ function InstructionsSection() {
         <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm">{error}</div>
       )}
 
-      {/* Textarea */}
+      {/* System Prompt (Cerebro General) */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+        <div className="flex items-center justify-between mb-3">
+          <label className="block text-sm font-semibold text-gray-700">
+            Prompt del sistema (cerebro general)
+          </label>
+          {!showSystemPrompt ? (
+            <button
+              onClick={() => { setShowSystemPrompt(true); if (!systemPrompt) setSystemPrompt(DEFAULT_SYSTEM_PROMPT) }}
+              className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
+            >
+              <Edit className="w-3.5 h-3.5" /> Personalizar
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setSystemPrompt(DEFAULT_SYSTEM_PROMPT)}
+                className="text-xs text-gray-500 hover:text-orange-600 font-medium flex items-center gap-1"
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> Restaurar default
+              </button>
+              <button
+                onClick={() => { setSystemPrompt(''); setShowSystemPrompt(false) }}
+                className="text-xs text-gray-400 hover:text-red-500 font-medium flex items-center gap-1"
+              >
+                <X className="w-3.5 h-3.5" /> Quitar
+              </button>
+            </div>
+          )}
+        </div>
+
+        {!showSystemPrompt ? (
+          <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-500">
+            <p>Usando el prompt por defecto. Haz click en "Personalizar" para editarlo.</p>
+            <p className="mt-1 text-xs text-gray-400">Tip: Usa <code className="bg-gray-200 px-1 rounded">{'{{nombre}}'}</code> para inyectar el nombre del cliente automaticamente.</p>
+          </div>
+        ) : (
+          <>
+            <textarea
+              value={systemPrompt}
+              onChange={e => setSystemPrompt(e.target.value)}
+              rows={12}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-y font-mono"
+              placeholder="Define la personalidad, tono y reglas base de la IA..."
+            />
+            <p className="mt-2 text-xs text-gray-400">
+              Este es el prompt base que define quien es la IA. Usa <code className="bg-gray-100 px-1 rounded">{'{{nombre}}'}</code> para inyectar el nombre del cliente.
+            </p>
+          </>
+        )}
+      </div>
+
+      {/* Instrucciones adicionales */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
         <label className="block text-sm font-semibold text-gray-700 mb-3">
-          Instrucciones personalizadas
+          Instrucciones adicionales
         </label>
+        <p className="text-xs text-gray-400 mb-3">Reglas especificas, conocimiento del negocio, procedimientos. Se agregan al prompt del sistema.</p>
         <textarea
           value={instructions}
           onChange={e => setInstructions(e.target.value)}
-          rows={14}
+          rows={10}
           className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-y font-mono"
-          placeholder={`Escribe aqui las instrucciones para la IA. Ejemplos:
-
-- Para consultas de precios, accede a la tabla de precios vigentes
+          placeholder={`Ejemplos:
 - Los modelos disponibles son: Venecia, Florencia, Roma, Milan
-- Si preguntan por despacho: "Dentro de Santiago 3-5 dias habiles, regiones 5-7 dias"
-- Si preguntan por formas de pago: transferencia, tarjeta de credito, webpay
+- Si preguntan por despacho: "Dentro de Santiago 3-5 dias habiles"
+- Formas de pago: transferencia, tarjeta de credito, webpay
 - Siempre ofrecer la opcion de hablar con un vendedor
 - No dar informacion sobre competidores
 - Horario de atencion: Lunes a Viernes 9:00 a 18:00`}
@@ -955,7 +1033,7 @@ function InstructionsSection() {
               className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg transition font-medium text-sm disabled:opacity-50"
             >
               <Save className="w-4 h-4" />
-              {saving ? 'Guardando...' : 'Guardar Instrucciones'}
+              {saving ? 'Guardando...' : 'Guardar Todo'}
             </button>
             {saved && (
               <span className="text-green-600 text-sm font-medium flex items-center gap-1">
