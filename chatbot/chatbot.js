@@ -222,12 +222,12 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
         }
 
         // Enviar fallback (sendTextViaCloudAPI ya guarda en BD)
-        const waMsgId = await sendTextViaCloudAPI(phone, fallbackMessage, sessionId);
+        const fallbackMsgId = await sendTextViaCloudAPI(phone, fallbackMessage, sessionId);
 
         // Obtener el messageId del mensaje recién insertado
         const [[lastMsg]] = await pool.query(
           `SELECT id FROM chat_messages WHERE session_id=? AND wa_msg_id=? ORDER BY id DESC LIMIT 1`,
-          [sessionId, waMsgId]
+          [sessionId, fallbackMsgId]
         );
         const messageId = lastMsg ? lastMsg.id : null;
 
@@ -236,14 +236,14 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
           type: 'message',
           direction: 'out',
           text: fallbackMessage,
-          msgId: waMsgId,
+          msgId: fallbackMsgId,
           dbId: messageId,
           status: 'sent',
           isAI: false,
           at: Date.now()
         });
 
-        logger.info({ sessionId, waMsgId, messageId }, '🎯 Fallback enviado');
+        logger.info({ sessionId, waMsgId: fallbackMsgId, messageId }, '🎯 Fallback enviado');
 
       } catch (e) {
         logger.error({ err: e, phone, message: e?.message, stack: e?.stack }, 'Error en Visual Flow Engine');
