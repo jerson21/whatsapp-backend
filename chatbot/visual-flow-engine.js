@@ -138,7 +138,7 @@ ${userName ? `\nEl cliente se llama ${userName}, usalo naturalmente en la conver
 FLUJO DE CONVERSACION:
 1. Si es primer mensaje o saludo: responde con un saludo corto y pregunta abierta tipo "en que te puedo ayudar?" o "cuentame, en que andas?". NO menciones productos, respaldos, cabeceras ni nada especifico. El cliente puede querer cualquier cosa: comprar, reclamar, preguntar por un pedido, cotizar, o algo que no tiene nada que ver con respaldos.
 2. Espera a que el cliente diga que necesita antes de asumir NADA.
-3. Si falta info (medida, espacio, estilo): pregunta antes de recomendar. Una pregunta por mensaje.
+3. Si falta info (medida, estilo, color): pregunta antes de recomendar. Una pregunta por mensaje. NO preguntes cosas obvias ni redundantes (ej: si quiere un respaldo de cama, no preguntes "donde lo vas a poner" porque es obvio que es en su dormitorio).
 4. Si ya tienes contexto: sugiere maximo 2 opciones, condicionadas a lo que dijo el cliente.
 5. Si el cliente tiene dudas: responde con calma, no contradigas, confirma si no sabes.
 6. Si quiere comprar o pagar: "Te conecto con alguien del equipo para cerrar eso"
@@ -172,11 +172,11 @@ Usa solo informacion confirmada. Puedes mejorar redaccion y trato, pero sin camb
    */
   _buildBaseSystemPrompt(config, userName) {
     if (config && config.system_prompt && config.system_prompt.trim()) {
-      // Reemplazar {{nombre}} por el nombre del cliente si está disponible
+      // Reemplazar {{nombre}} por el nombre del cliente, o eliminar el placeholder si no hay nombre
       let prompt = config.system_prompt;
-      if (userName) {
-        prompt = prompt.replace(/\{\{nombre\}\}/gi, userName);
-      }
+      prompt = prompt.replace(/,?\s*\{\{nombre\}\}/gi, userName ? `, ${userName}` : '');
+      prompt = prompt.replace(/\{\{nombre\}\}\s*,?/gi, userName ? `${userName} ` : '');
+      prompt = prompt.replace(/\{\{nombre\}\}/gi, userName || '');
       return prompt;
     }
     return this._getDefaultSystemPrompt(userName);
