@@ -1,6 +1,10 @@
-# Docker Compose para desarrollo local
-# Levanta MySQL + Backend + Frontend
-# Uso: docker-compose -f docker-compose.dev.yml up -d --build
+# Docker Compose para PRODUCCION
+# Levanta MySQL + Redis + Backend + Frontend
+# Uso: docker compose -f docker-compose.prod.yml up -d --build
+#
+# IMPORTANTE: Los puertos de MySQL y Redis NO se exponen al exterior.
+# Solo backend (3001) y frontend (5173) se exponen en 127.0.0.1
+# para que Nginx haga reverse proxy.
 #
 # Las credenciales se leen del archivo .env (no se guardan aqui)
 
@@ -14,13 +18,28 @@ services:
       MYSQL_DATABASE: ${DB_NAME}
       MYSQL_USER: ${DB_USER}
       MYSQL_PASSWORD: ${DB_PASS}
-    ports:
-      - "${MYSQL_PORT:-3307}:3306"
+    # NO exponemos puerto MySQL al exterior (leccion aprendida)
     volumes:
       - whatsapp_mysql_data:/var/lib/mysql
     command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - whatsapp-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: whatsapp-redis
+    restart: unless-stopped
+    # NO exponemos puerto Redis al exterior
+    volumes:
+      - whatsapp_redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -34,17 +53,14 @@ services:
     container_name: whatsapp-backend
     restart: unless-stopped
     ports:
-      - "${BACKEND_PORT:-3001}:3001"
+      - "127.0.0.1:3001:3001"
     env_file:
       - .env
     environment:
-      - NODE_ENV=development
+      - NODE_ENV=production
       - PORT=3001
       - DB_HOST=mysql
       - DB_PORT=3306
-      - LOG_LEVEL=debug
-      - VISUAL_FLOWS_ENABLED=${VISUAL_FLOWS_ENABLED:-true}
-      - CHATBOT_GLOBAL_ENABLED=${CHATBOT_GLOBAL_ENABLED:-false}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     depends_on:
@@ -53,10 +69,11 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - .:/app
-      - /app/node_modules
       - ./logs:/app/logs
-    command: ["node", "--watch", "--dns-result-order=ipv4first", "app-cloud.js"]
+    deploy:
+      resources:
+        limits:
+          memory: 1G
     networks:
       - whatsapp-network
 
@@ -67,27 +84,9 @@ services:
     container_name: whatsapp-frontend
     restart: unless-stopped
     ports:
-      - "${FRONTEND_PORT:-5173}:80"
+      - "127.0.0.1:5173:80"
     depends_on:
       - backend
-    networks:
-      - whatsapp-network
-
-  # Redis para Bull MQ (colas de mensajes, broadcasts)
-  redis:
-    image: redis:7-alpine
-    container_name: whatsapp-redis
-    restart: unless-stopped
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    volumes:
-      - whatsapp_redis_data:/data
-    command: redis-server --appendonly yes
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     networks:
       - whatsapp-network
 
