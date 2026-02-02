@@ -143,3 +143,13 @@ export async function correctBotMessage(sessionId, messageId, correctedAnswer) {
   })
   return handleResponse(res)
 }
+
+// === SIMULADOR DE CHAT ===
+export async function simulateChatMessage(phone, message) {
+  const res = await fetch('/api/chat/simulate', {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({ phone, message })
+  })
+  return handleResponse(res)
+}
