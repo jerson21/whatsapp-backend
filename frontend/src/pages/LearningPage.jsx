@@ -14,7 +14,8 @@ import {
   reprocessSessions, fetchPrices, createPrice, updatePrice,
   deletePrice, fetchBrainReport,
   fetchChatbotConfig, updateChatbotConfig, fetchCurrentPrompt,
-  fetchBotConversations, fetchBotConversationMessages, correctBotMessage
+  fetchBotConversations, fetchBotConversationMessages, correctBotMessage,
+  fetchBehavioralRules, createBehavioralRule, deleteBehavioralRule
 } from '../api/learning'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -903,7 +904,51 @@ function InstructionsSection() {
   // Probador IA
   const [showTester, setShowTester] = useState(false)
 
-  useEffect(() => { loadConfig() }, [])
+  // Behavioral rules
+  const [rules, setRules] = useState([])
+  const [rulesLoading, setRulesLoading] = useState(true)
+  const [newRule, setNewRule] = useState('')
+  const [newRuleCategory, setNewRuleCategory] = useState('general')
+  const [addingRule, setAddingRule] = useState(false)
+
+  useEffect(() => { loadConfig(); loadRules() }, [])
+
+  const loadRules = async () => {
+    setRulesLoading(true)
+    try {
+      const data = await fetchBehavioralRules()
+      setRules(data.rules || [])
+    } catch (err) {
+      console.error('Error loading rules:', err)
+      setRules([])
+    } finally {
+      setRulesLoading(false)
+    }
+  }
+
+  const handleAddRule = async () => {
+    if (!newRule.trim() || addingRule) return
+    setAddingRule(true)
+    try {
+      await createBehavioralRule({ rule: newRule.trim(), category: newRuleCategory })
+      setNewRule('')
+      setNewRuleCategory('general')
+      loadRules()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setAddingRule(false)
+    }
+  }
+
+  const handleDeleteRule = async (id) => {
+    try {
+      await deleteBehavioralRule(id)
+      setRules(prev => prev.filter(r => r.id !== id))
+    } catch (err) {
+      setError(err.message)
+    }
+  }
 
   const loadConfig = async () => {
     setLoading(true)
@@ -1090,6 +1135,104 @@ function InstructionsSection() {
               <Play className="w-4 h-4" /> Probar IA
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* Reglas de Comportamiento */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+              <Shield className="w-4 h-4 text-purple-500" /> Reglas de Comportamiento
+            </h3>
+            <p className="text-xs text-gray-400 mt-1">
+              Reglas que la IA debe seguir siempre. Se inyectan con prioridad alta en cada respuesta.
+            </p>
+          </div>
+          <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-purple-50 text-purple-700">
+            {rules.length}/30 reglas
+          </span>
+        </div>
+
+        {/* Rule list */}
+        {rulesLoading ? (
+          <div className="text-center py-6 text-gray-400 text-sm">Cargando reglas...</div>
+        ) : rules.length === 0 ? (
+          <div className="text-center py-6">
+            <Shield className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+            <p className="text-sm text-gray-400">Sin reglas todavia</p>
+            <p className="text-xs text-gray-300 mt-1">Agrega reglas aqui o desde el Probador IA con "Corregir"</p>
+          </div>
+        ) : (
+          <div className="space-y-2 mb-4">
+            {rules.map(rule => (
+              <div key={rule.id} className="flex items-start gap-3 bg-gray-50 rounded-lg p-3 group">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-gray-700">{rule.rule_text}</p>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full uppercase ${
+                      rule.category === 'tone' ? 'bg-blue-50 text-blue-600' :
+                      rule.category === 'knowledge' ? 'bg-green-50 text-green-600' :
+                      rule.category === 'sales' ? 'bg-amber-50 text-amber-600' :
+                      rule.category === 'format' ? 'bg-indigo-50 text-indigo-600' :
+                      rule.category === 'safety' ? 'bg-red-50 text-red-600' :
+                      'bg-gray-100 text-gray-500'
+                    }`}>
+                      {rule.category}
+                    </span>
+                    <span className="text-[9px] text-gray-400">
+                      via {rule.source === 'correction' ? 'correccion' : rule.source === 'admin' ? 'admin' : rule.source}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleDeleteRule(rule.id)}
+                  className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition opacity-0 group-hover:opacity-100"
+                  title="Eliminar regla"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add new rule */}
+        <div className="border-t border-gray-100 pt-4 mt-2">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newRule}
+              onChange={e => setNewRule(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleAddRule()}
+              placeholder="Ej: Nunca recomendar modelos especificos sin preguntar primero"
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+              maxLength={500}
+            />
+            <select
+              value={newRuleCategory}
+              onChange={e => setNewRuleCategory(e.target.value)}
+              className="px-2 py-2 border border-gray-300 rounded-lg text-xs text-gray-600"
+            >
+              <option value="general">General</option>
+              <option value="tone">Tono</option>
+              <option value="knowledge">Conocimiento</option>
+              <option value="sales">Ventas</option>
+              <option value="format">Formato</option>
+              <option value="safety">Seguridad</option>
+            </select>
+            <button
+              onClick={handleAddRule}
+              disabled={addingRule || !newRule.trim() || rules.length >= 30}
+              className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              {addingRule ? '...' : 'Agregar'}
+            </button>
+          </div>
+          {newRule.length > 400 && (
+            <p className="text-[10px] text-amber-600 mt-1">{500 - newRule.length} caracteres restantes</p>
+          )}
         </div>
       </div>
 
