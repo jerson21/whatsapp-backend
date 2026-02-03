@@ -63,6 +63,7 @@ export default function ProbadorDrawer({ show, onClose }) {
           approvedPairs: prompt.knowledgePairsInjected || 0,
           activePrices: ai.priceQuery?.pricesFound?.length || 0,
           behavioralRules: prompt.behavioralRulesCount || 0,
+          recentCorrections: prompt.recentCorrectionsCount || 0,
           instructionsChars: prompt.totalSystemPromptChars || 0,
           model: openaiCall.model || 'unknown',
           fidelityLevel: prompt.fidelityLevel || 'enhanced',

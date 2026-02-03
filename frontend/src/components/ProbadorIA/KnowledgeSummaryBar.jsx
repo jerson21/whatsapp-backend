@@ -10,6 +10,7 @@ export default function KnowledgeSummaryBar({ stats, flashField }) {
     approvedPairs = 0,
     activePrices = 0,
     behavioralRules = 0,
+    recentCorrections = 0,
     instructionsChars = 0,
     model = 'desconocido',
     fidelityLevel = 'medium',
@@ -25,7 +26,7 @@ export default function KnowledgeSummaryBar({ stats, flashField }) {
       >
         <Brain className="w-4 h-4 text-amber-600 flex-shrink-0" />
         <span className="text-[11px] text-amber-800 font-medium flex-1 truncate">
-          {approvedPairs} Q&A | {activePrices} Precios | {model} | temp {temperature}
+          {approvedPairs} Q&A | {recentCorrections > 0 ? `${recentCorrections} Correcciones | ` : ''}{activePrices} Precios | {model} | temp {temperature}
         </span>
         {expanded
           ? <ChevronDown className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />

@@ -556,6 +556,33 @@ ${rulesText}
         }
       }
 
+      // --- Inyectar correcciones recientes aprobadas (bypass retriever) ---
+      let recentCorrections = [];
+      try {
+        const [corrections] = await this.db.query(
+          `SELECT question, answer FROM learned_qa_pairs
+           WHERE status = 'approved' AND (embedding IS NULL OR channel = 'tester_correction')
+           ORDER BY created_at DESC LIMIT 10`
+        );
+        recentCorrections = corrections;
+        if (corrections.length > 0) {
+          const correctionsText = corrections.map(c =>
+            `Si el cliente dice algo como "${c.question}", responde asi: "${c.answer}"`
+          ).join('\n');
+          systemPrompt += `\n\n--- CORRECCIONES APROBADAS (MAXIMA PRIORIDAD) ---
+ATENCION: Estas correcciones fueron definidas manualmente por el administrador.
+Tienen PRIORIDAD ABSOLUTA sobre cualquier otro comportamiento.
+Si el mensaje del cliente coincide o es similar a alguna de estas preguntas, DEBES usar la respuesta indicada:
+
+${correctionsText}
+--- FIN CORRECCIONES ---`;
+        }
+      } catch (err) {
+        if (err.code !== 'ER_NO_SUCH_TABLE') {
+          logger.error({ err }, 'Error loading recent corrections');
+        }
+      }
+
       // --- Construir array de mensajes con historial ---
       const messages = [
         { role: 'system', content: systemPrompt }
@@ -575,7 +602,7 @@ ${rulesText}
       messages.push({ role: 'user', content: message });
 
       const aiModel = process.env.CHATBOT_AI_MODEL || 'gpt-4o-mini';
-      const aiTemperature = knowledgeContext.length > 0 ? 0.3 : 0.5;
+      const aiTemperature = (knowledgeContext.length > 0 || recentCorrections.length > 0) ? 0.3 : 0.5;
       const aiMaxTokens = 350;
 
       // Estimate tokens (rough: 1 token ~ 4 chars)
@@ -592,6 +619,8 @@ ${rulesText}
           pricesInjected: priceContext.length > 0,
           behavioralRulesInjected: behavioralRules.length > 0,
           behavioralRulesCount: behavioralRules.length,
+          recentCorrectionsInjected: recentCorrections.length > 0,
+          recentCorrectionsCount: recentCorrections.length,
           totalSystemPromptChars: systemPrompt.length,
           totalMessagesInArray: messages.length,
           estimatedTokens,
