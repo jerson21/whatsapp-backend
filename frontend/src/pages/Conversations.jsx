@@ -141,6 +141,8 @@ export default function Conversations() {
   const selectedPhoneRef = useRef(selectedPhone)
   selectedPhoneRef.current = selectedPhone
   const selectedSessionId = selectedConversation?.session_id || selectedConversation?.sessionId || selectedConversation?.id || null
+  const selectedSessionIdRef = useRef(selectedSessionId)
+  selectedSessionIdRef.current = selectedSessionId
   const hasConnectedOnceRef = useRef(false)
 
   const { socket, connected } = useSocket('/chat')
@@ -182,11 +184,17 @@ export default function Conversations() {
     if (!socket) return
 
     socket.on('new_message', (data) => {
-      console.log('New message via WebSocket:', data)
+      // Comparación robusta: por phone (String) O por sessionId
+      const isCurrentChat =
+        (data.phone && String(data.phone) === String(selectedPhoneRef.current)) ||
+        (data.sessionId && selectedSessionIdRef.current && Number(data.sessionId) === Number(selectedSessionIdRef.current))
 
-      if (data.phone && data.phone === selectedPhoneRef.current) {
+      if (isCurrentChat) {
         setMessages(prev => {
-          const exists = prev.find(m => m.waMsgId === data.msgId || m.id === data.dbId)
+          const exists = prev.find(m =>
+            (data.msgId && m.waMsgId === data.msgId) ||
+            (data.dbId && m.id === data.dbId)
+          )
           if (exists) return prev
 
           return [...prev, {
