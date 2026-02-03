@@ -145,11 +145,44 @@ export async function correctBotMessage(sessionId, messageId, correctedAnswer) {
 }
 
 // === SIMULADOR DE CHAT ===
-export async function simulateChatMessage(phone, message) {
+export async function simulateChatMessage(phone, message, debug = false) {
   const res = await fetch('/api/chat/simulate', {
     method: 'POST',
     headers: getHeaders(),
-    body: JSON.stringify({ phone, message })
+    body: JSON.stringify({ phone, message, debug })
+  })
+  return handleResponse(res)
+}
+
+// === QUICK CORRECT (tester creates approved Q&A pair) ===
+export async function quickCorrectFromTester(question, correctedAnswer) {
+  const res = await fetch(`${API_BASE}/quick-correct`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({ question, correctedAnswer })
+  })
+  return handleResponse(res)
+}
+
+// === BEHAVIORAL RULES ===
+export async function fetchBehavioralRules() {
+  const res = await fetch(`${API_BASE}/behavioral-rules`, { headers: getHeaders() })
+  return handleResponse(res)
+}
+
+export async function createBehavioralRule(data) {
+  const res = await fetch(`${API_BASE}/behavioral-rules`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(data)
+  })
+  return handleResponse(res)
+}
+
+export async function deleteBehavioralRule(id) {
+  const res = await fetch(`${API_BASE}/behavioral-rules/${id}`, {
+    method: 'DELETE',
+    headers: getHeaders()
   })
   return handleResponse(res)
 }

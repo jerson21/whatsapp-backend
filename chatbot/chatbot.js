@@ -51,7 +51,9 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
    * 2. Intentar Visual Flow Engine
    * 3. Si no hay match → Enviar fallback
    */
-  async function handleChatbotMessage({ sessionId, phone, text, buttonId, waMsgId }) {
+  async function handleChatbotMessage({ sessionId, phone, text, buttonId, waMsgId, __trace }) {
+    const trace = __trace || null;
+
     try {
       logger.info({ sessionId, phone, text: text?.slice(0, 50) }, '🤖 handleChatbotMessage INICIADO');
 
@@ -64,19 +66,29 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
       // Obtener modo de la sesión
       const sessionIdNum = Number(sessionId);
       let mode = sessionModes.get(sessionIdNum);
+      let modeSource = 'memory';
 
       if (!mode) {
         try {
           const [[row]] = await pool.query(`SELECT chatbot_mode FROM chat_sessions WHERE id=?`, [sessionId]);
           mode = row?.chatbot_mode || CHATBOT_MODE_DEFAULT;
+          modeSource = row?.chatbot_mode ? 'database' : 'default';
           sessionModes.set(sessionIdNum, mode);
           logger.info({ sessionId, mode }, '🤖 Modo cargado de BD');
         } catch (e) {
           mode = CHATBOT_MODE_DEFAULT;
+          modeSource = 'default';
           logger.warn({ sessionId, error: e.message, mode }, '🤖 Error cargando modo, usando default');
         }
-      } else {
-        logger.debug({ sessionId, mode }, '🤖 Modo desde memoria');
+      }
+
+      if (trace) {
+        trace.modeCheck = {
+          mode,
+          modeSource,
+          visualFlowsEnabled: visualFlowsGlobalEnabled,
+          outcome: mode === 'manual' ? 'manual_skip' : (!visualFlowsGlobalEnabled ? 'flows_disabled' : 'proceed')
+        };
       }
 
       // ========================================
@@ -89,6 +101,10 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
           mode: 'manual',
           message: 'Nuevo mensaje recibido - Responde manualmente'
         });
+        if (trace) {
+          trace.result = { type: 'manual_mode', path: 'manual', responseSent: false, responseTexts: [], messageDbIds: [] };
+          return { type: 'manual_mode' };
+        }
         return;
       }
 
@@ -102,6 +118,10 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
           mode: 'off',
           message: 'Visual Flows deshabilitado - modo manual activo'
         });
+        if (trace) {
+          trace.result = { type: 'flows_disabled', path: 'disabled', responseSent: false, responseTexts: [], messageDbIds: [] };
+          return { type: 'flows_disabled' };
+        }
         return;
       }
 
@@ -115,11 +135,26 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
           sessionId,
           phone,
           buttonId, // ID del botón interactivo si el usuario presionó uno
-          waMsgId   // ID del mensaje entrante para typing indicator
+          waMsgId,  // ID del mensaje entrante para typing indicator
+          __trace: trace
         });
 
         if (flowResult) {
           logger.info({ phone, flowResult: flowResult.type }, '🎯 Visual Flow manejó el mensaje');
+
+          // Helper to collect response texts and dbIds from flowResult
+          const collectResponses = (fr) => {
+            const texts = [];
+            const dbIds = [];
+            if (fr.text) texts.push(fr.text);
+            if (fr.sentMessages) {
+              for (const m of fr.sentMessages) {
+                if (m.text) texts.push(m.text);
+                if (m.dbId) dbIds.push(m.dbId);
+              }
+            }
+            return { texts, dbIds };
+          };
 
           switch (flowResult.type) {
             case 'waiting_for_response':
@@ -128,6 +163,11 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
                 flowState: 'waiting',
                 message: 'Flujo visual activo - esperando respuesta del cliente'
               });
+              if (trace) {
+                const r = collectResponses(flowResult);
+                trace.result = { type: flowResult.type, path: 'visual_flow', responseSent: r.texts.length > 0, responseTexts: r.texts, messageDbIds: r.dbIds };
+              }
+              if (trace) return flowResult;
               return;
 
             case 'transfer_to_human':
@@ -158,6 +198,11 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
               } catch (e) {
                 logger.error({ err: e, sessionId }, 'Error en auto-asignación desde chatbot');
               }
+              if (trace) {
+                const r = collectResponses(flowResult);
+                trace.result = { type: flowResult.type, path: 'transfer', responseSent: r.texts.length > 0, responseTexts: r.texts, messageDbIds: r.dbIds };
+              }
+              if (trace) return flowResult;
               return;
 
             case 'flow_completed':
@@ -167,6 +212,11 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
                 type: 'visual_flow_completed',
                 message: 'Flujo visual completado'
               });
+              if (trace) {
+                const r = collectResponses(flowResult);
+                trace.result = { type: flowResult.type, path: 'visual_flow', responseSent: r.texts.length > 0, responseTexts: r.texts, messageDbIds: r.dbIds };
+              }
+              if (trace) return flowResult;
               return;
 
             case 'global_keyword':
@@ -175,6 +225,11 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
                 action: flowResult.action,
                 message: `Keyword global activada: ${flowResult.action}`
               });
+              if (trace) {
+                const r = collectResponses(flowResult);
+                trace.result = { type: flowResult.type, path: 'global_keyword', responseSent: r.texts.length > 0, responseTexts: r.texts, messageDbIds: r.dbIds };
+              }
+              if (trace) return flowResult;
               return;
 
             case 'session_ended':
@@ -182,6 +237,11 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
                 type: 'session_ended',
                 message: 'Usuario terminó la conversación'
               });
+              if (trace) {
+                const r = collectResponses(flowResult);
+                trace.result = { type: flowResult.type, path: 'session_ended', responseSent: r.texts.length > 0, responseTexts: r.texts, messageDbIds: r.dbIds };
+              }
+              if (trace) return flowResult;
               return;
 
             case 'ai_fallback':
@@ -200,6 +260,11 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
                   });
                 }
               }
+              if (trace) {
+                const r = collectResponses(flowResult);
+                trace.result = { type: flowResult.type, path: 'ai_fallback', responseSent: r.texts.length > 0, responseTexts: r.texts, messageDbIds: r.dbIds };
+              }
+              if (trace) return flowResult;
               return;
 
             case 'personalized_greeting':
@@ -208,10 +273,20 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
                 user: flowResult.user,
                 message: `Saludo personalizado para ${flowResult.user}`
               });
+              if (trace) {
+                const r = collectResponses(flowResult);
+                trace.result = { type: flowResult.type, path: 'personalized_greeting', responseSent: r.texts.length > 0, responseTexts: r.texts, messageDbIds: r.dbIds };
+              }
+              if (trace) return flowResult;
               return;
 
             default:
               logger.debug({ flowResultType: flowResult.type }, 'Flow result type no manejado específicamente');
+              if (trace) {
+                const r = collectResponses(flowResult);
+                trace.result = { type: flowResult.type, path: 'other', responseSent: r.texts.length > 0, responseTexts: r.texts, messageDbIds: r.dbIds };
+              }
+              if (trace) return flowResult;
               return;
           }
         }
@@ -227,8 +302,8 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
           ? configRows[0].fallback_message
           : 'Gracias por tu mensaje. Un agente te atenderá pronto.';
 
-        // Delay antes de responder
-        if (CHATBOT_AUTO_REPLY_DELAY > 0) {
+        // Delay antes de responder (skip in trace mode)
+        if (CHATBOT_AUTO_REPLY_DELAY > 0 && !trace) {
           await new Promise(r => setTimeout(r, CHATBOT_AUTO_REPLY_DELAY));
         }
 
@@ -255,6 +330,17 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
         });
 
         logger.info({ sessionId, waMsgId: fallbackMsgId, messageId }, '🎯 Fallback enviado');
+
+        if (trace) {
+          trace.result = {
+            type: 'fallback',
+            path: 'no_flow_fallback',
+            responseSent: true,
+            responseTexts: [fallbackMessage],
+            messageDbIds: messageId ? [messageId] : []
+          };
+          return { type: 'fallback', text: fallbackMessage };
+        }
 
       } catch (e) {
         logger.error({ err: e, phone, message: e?.message, stack: e?.stack }, 'Error en Visual Flow Engine');

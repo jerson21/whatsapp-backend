@@ -574,5 +574,77 @@ Genera el reporte JSON de auto-analisis.`;
     }
   });
 
+  // =============================================
+  // BEHAVIORAL RULES CRUD
+  // =============================================
+
+  router.get('/behavioral-rules', async (req, res) => {
+    try {
+      const [rules] = await pool.query(
+        'SELECT * FROM chatbot_behavioral_rules WHERE is_active = TRUE ORDER BY priority DESC, created_at DESC'
+      );
+      res.json({ ok: true, rules });
+    } catch (e) {
+      if (e.code === 'ER_NO_SUCH_TABLE') {
+        return res.json({ ok: true, rules: [] });
+      }
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  router.post('/behavioral-rules', async (req, res) => {
+    try {
+      const { rule, category = 'general', source = 'admin' } = req.body;
+      if (!rule || !rule.trim()) {
+        return res.status(400).json({ ok: false, error: 'rule is required' });
+      }
+      if (rule.length > 500) {
+        return res.status(400).json({ ok: false, error: 'Rule must be 500 characters or less' });
+      }
+      const [countResult] = await pool.query(
+        'SELECT COUNT(*) as cnt FROM chatbot_behavioral_rules WHERE is_active = TRUE'
+      );
+      if (countResult[0].cnt >= 30) {
+        return res.status(400).json({ ok: false, error: 'Maximum 30 active rules allowed' });
+      }
+      const [result] = await pool.query(
+        'INSERT INTO chatbot_behavioral_rules (rule_text, category, source) VALUES (?, ?, ?)',
+        [rule.trim(), category, source]
+      );
+      res.json({ ok: true, id: result.insertId });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  router.delete('/behavioral-rules/:id', async (req, res) => {
+    try {
+      await pool.query('DELETE FROM chatbot_behavioral_rules WHERE id = ?', [req.params.id]);
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
+  // =============================================
+  // QUICK CORRECT (tester creates approved Q&A pair)
+  // =============================================
+
+  router.post('/quick-correct', async (req, res) => {
+    try {
+      const { question, correctedAnswer } = req.body;
+      if (!question || !correctedAnswer) {
+        return res.status(400).json({ ok: false, error: 'question and correctedAnswer are required' });
+      }
+      const [result] = await pool.query(
+        `INSERT INTO learned_qa_pairs (question, answer, status, channel, quality_score) VALUES (?, ?, 'approved', 'tester_correction', 1.0)`,
+        [question.trim(), correctedAnswer.trim()]
+      );
+      res.json({ ok: true, id: result.insertId });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: e.message });
+    }
+  });
+
   return router;
 };

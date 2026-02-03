@@ -31,6 +31,7 @@ const fs = require('fs');
 const multer = require('multer');
 const upload = multer(); // memoria
 const { createChatbot } = require('./chatbot/chatbot');
+const { createTrace, finalizeTrace } = require('./chatbot/trace-builder');
 // createFAQStore eliminado (codigo muerto — usamos createFAQDatabase)
 const { createFAQDatabase } = require('./faq/faq-database');
 const MessageClassifier = require('./chatbot/message-classifier');
@@ -3015,7 +3016,7 @@ let simulateMessageHandler = null;
 
 app.post('/api/chat/simulate', express.json(), async (req, res) => {
   try {
-    const { phone, message } = req.body || {};
+    const { phone, message, debug } = req.body || {};
 
     if (!phone || !message) {
       return res.status(400).json({ ok: false, error: 'Se requieren phone y message' });
@@ -3024,7 +3025,10 @@ app.post('/api/chat/simulate', express.json(), async (req, res) => {
     const normalizedPhone = phone.replace(/[^\d+]/g, ''); // Limpiar formato
     const text = String(message).trim();
 
-    logger.info({ phone: normalizedPhone, text: text.slice(0, 50) }, '🧪 SIMULACIÓN: Mensaje entrante');
+    logger.info({ phone: normalizedPhone, text: text.slice(0, 50), debug: !!debug }, '🧪 SIMULACIÓN: Mensaje entrante');
+
+    // Create trace when debug mode is requested
+    const trace = debug === true ? createTrace(text, normalizedPhone) : null;
 
     // 🌐 Simulador usa canal 'tester'
     const channel = 'tester';
@@ -3036,6 +3040,7 @@ app.post('/api/chat/simulate', express.json(), async (req, res) => {
     );
 
     let sessionId, sessionChatbotEnabled = false;
+    let sessionCreated = false;
     if (rows.length) {
       sessionId = rows[0].id;
       sessionChatbotEnabled = !!rows[0].chatbot_enabled;
@@ -3052,6 +3057,20 @@ app.post('/api/chat/simulate', express.json(), async (req, res) => {
       );
       sessionId = ins.insertId;
       sessionChatbotEnabled = enableForNew;
+      sessionCreated = true;
+    }
+
+    if (trace) {
+      trace.sessionId = sessionId;
+      trace.sessionCreated = sessionCreated;
+      trace.entry = {
+        phone: normalizedPhone,
+        text,
+        channel,
+        sessionId,
+        sessionChatbotEnabled,
+        chatbotGlobalEnabled
+      };
     }
 
     // Insertar mensaje en BD (simular como mensaje entrante)
@@ -3101,35 +3120,47 @@ app.post('/api/chat/simulate', express.json(), async (req, res) => {
       try {
         logger.info({ sessionId, phone: normalizedPhone }, '🧪 SIMULACIÓN: Ejecutando chatbot');
 
-        // Ejecutar chatbot (igual que en webhook)
-        await simulateMessageHandler({
+        // Ejecutar chatbot — pass trace so handler returns result
+        const handlerResult = await simulateMessageHandler({
           sessionId,
           phone: normalizedPhone,
           text,
-          buttonId: null
+          buttonId: null,
+          waMsgId: simulatedWaMsgId,
+          __trace: trace
         });
 
-        // Esperar un poco para que el chatbot procese y guarde las respuestas
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        if (trace && trace.result && trace.result.responseTexts && trace.result.responseTexts.length > 0) {
+          // In debug/trace mode, extract responses directly from trace (no race condition)
+          responses = trace.result.responseTexts;
+          flowExecuted = responses.length > 0;
+        } else {
+          // Non-debug mode OR trace had no responses: poll DB as fallback with longer wait
+          const waitMs = trace ? 500 : 3000;
+          await new Promise(resolve => setTimeout(resolve, waitMs));
 
-        // Obtener las últimas respuestas del bot de esta sesión
-        const [botMessages] = await pool.query(
-          `SELECT text FROM chat_messages
-           WHERE session_id = ? AND direction = 'out' AND id > ?
-           ORDER BY id ASC LIMIT 10`,
-          [sessionId, dbMessageId]
-        );
+          // Obtener las últimas respuestas del bot de esta sesión
+          const [botMessages] = await pool.query(
+            `SELECT text FROM chat_messages
+             WHERE session_id = ? AND direction = 'out' AND id > ?
+             ORDER BY id ASC LIMIT 10`,
+            [sessionId, dbMessageId]
+          );
 
-        responses = botMessages.map(m => m.text);
-        flowExecuted = responses.length > 0;
+          responses = botMessages.map(m => m.text);
+          flowExecuted = responses.length > 0;
+        }
 
-        logger.info({ sessionId, responseCount: responses.length }, '🧪 SIMULACIÓN: Chatbot ejecutado');
+        logger.info({ sessionId, responseCount: responses.length, traced: !!trace }, '🧪 SIMULACIÓN: Chatbot ejecutado');
       } catch (e) {
         logger.error({ e }, '🧪 SIMULACIÓN: Error ejecutando chatbot');
       }
     } else {
       logger.info({ sessionId, chatbotGlobalEnabled, sessionChatbotEnabled, hasHandler: !!simulateMessageHandler }, '🧪 SIMULACIÓN: Chatbot deshabilitado o no inicializado');
     }
+
+    // Finalize trace
+    if (trace) finalizeTrace(trace);
 
     // Retornar resultado
     return res.json({
@@ -3139,7 +3170,8 @@ app.post('/api/chat/simulate', express.json(), async (req, res) => {
       responses,
       flowExecuted,
       flowName,
-      message: responses.length > 0 ? null : 'Mensaje recibido (chatbot no habilitado o sin respuestas)'
+      message: responses.length > 0 ? null : 'Mensaje recibido (chatbot no habilitado o sin respuestas)',
+      trace: trace || undefined
     });
 
   } catch (e) {

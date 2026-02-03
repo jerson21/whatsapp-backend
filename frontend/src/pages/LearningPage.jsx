@@ -1,20 +1,20 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Brain, BookOpen, DollarSign, BarChart3,
   Check, X, Trash2, RefreshCw, Plus, Edit,
   ChevronLeft, ChevronRight, Sparkles,
   AlertTriangle, TrendingUp, Shield, Zap,
   Eye, Target, FileText, MessageSquare, Save,
-  Code, ArrowLeft, PenLine, RotateCcw, Send, Play
+  Code, ArrowLeft, PenLine, RotateCcw, Play
 } from 'lucide-react'
 import StatsCard from '../components/StatsCard'
+import ProbadorDrawer from '../components/ProbadorIA/ProbadorDrawer'
 import {
   fetchLearningStats, fetchPairs, updatePairStatus, deletePair,
   reprocessSessions, fetchPrices, createPrice, updatePrice,
   deletePrice, fetchBrainReport,
   fetchChatbotConfig, updateChatbotConfig, fetchCurrentPrompt,
-  fetchBotConversations, fetchBotConversationMessages, correctBotMessage,
-  simulateChatMessage
+  fetchBotConversations, fetchBotConversationMessages, correctBotMessage
 } from '../api/learning'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -902,11 +902,6 @@ function InstructionsSection() {
 
   // Probador IA
   const [showTester, setShowTester] = useState(false)
-  const [testerMessages, setTesterMessages] = useState([])
-  const [testerInput, setTesterInput] = useState('')
-  const [testerLoading, setTesterLoading] = useState(false)
-  const [testerPhone, setTesterPhone] = useState(() => `tester_admin_${Date.now()}`)
-  const testerEndRef = useRef(null)
 
   useEffect(() => { loadConfig() }, [])
 
@@ -963,39 +958,6 @@ function InstructionsSection() {
       setLoadingPrompt(false)
     }
   }
-
-  // Probador IA
-  const sendTesterMessage = async () => {
-    const text = testerInput.trim()
-    if (!text || testerLoading) return
-    setTesterInput('')
-    setTesterMessages(prev => [...prev, { role: 'user', text, time: new Date() }])
-    setTesterLoading(true)
-    try {
-      const data = await simulateChatMessage(testerPhone, text)
-      const responses = data.responses || []
-      if (responses.length > 0) {
-        setTesterMessages(prev => [...prev, ...responses.map(r => ({ role: 'bot', text: r, time: new Date() }))])
-      } else {
-        setTesterMessages(prev => [...prev, { role: 'bot', text: '(sin respuesta del bot)', time: new Date() }])
-      }
-    } catch (err) {
-      setTesterMessages(prev => [...prev, { role: 'system', text: 'Error: ' + err.message, time: new Date() }])
-    } finally {
-      setTesterLoading(false)
-    }
-  }
-
-  const resetTester = () => {
-    setTesterMessages([])
-    setTesterPhone(`tester_admin_${Date.now()}`)
-  }
-
-  useEffect(() => {
-    if (testerEndRef.current) {
-      testerEndRef.current.scrollIntoView({ behavior: 'smooth' })
-    }
-  }, [testerMessages])
 
   if (loading) {
     return (
@@ -1214,105 +1176,8 @@ function InstructionsSection() {
         </div>
       )}
 
-      {/* Drawer: Probador IA */}
-      {showTester && (
-        <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setShowTester(false)}>
-          <div className="absolute inset-0 bg-black/30" />
-          <div
-            className="relative w-full max-w-md bg-white shadow-2xl flex flex-col h-full animate-in slide-in-from-right"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-5 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-3 text-white">
-                <Play className="w-5 h-5" />
-                <div>
-                  <h3 className="font-bold text-sm">Probador IA</h3>
-                  <p className="text-[10px] text-purple-200">Prueba tu prompt en tiempo real</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={resetTester}
-                  className="text-[10px] bg-white/20 hover:bg-white/30 text-white px-2.5 py-1 rounded-full font-medium transition"
-                >
-                  Nueva conv.
-                </button>
-                <button onClick={() => setShowTester(false)} className="p-1 text-white/70 hover:text-white rounded">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Mensajes */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
-              {testerMessages.length === 0 && (
-                <div className="text-center py-12">
-                  <MessageSquare className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                  <p className="text-sm text-gray-400">Escribe un mensaje para probar la IA</p>
-                  <p className="text-xs text-gray-300 mt-1">Usa el mismo motor que WhatsApp real</p>
-                </div>
-              )}
-              {testerMessages.map((msg, i) => (
-                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : msg.role === 'system' ? 'justify-center' : 'justify-start'}`}>
-                  {msg.role === 'system' ? (
-                    <span className="text-[10px] text-red-500 bg-red-50 px-3 py-1 rounded-full">{msg.text}</span>
-                  ) : (
-                    <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
-                      msg.role === 'user'
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-white text-gray-800 border border-gray-200 shadow-sm'
-                    }`}>
-                      {msg.role === 'bot' && (
-                        <span className="text-[9px] font-semibold uppercase tracking-wider text-purple-500 block mb-1">Bot IA</span>
-                      )}
-                      <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
-                      <span className="text-[9px] opacity-50 block mt-1">
-                        {msg.time.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              ))}
-              {testerLoading && (
-                <div className="flex justify-start">
-                  <div className="bg-white border border-gray-200 rounded-2xl px-4 py-3 shadow-sm">
-                    <div className="flex gap-1.5">
-                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                    </div>
-                  </div>
-                </div>
-              )}
-              <div ref={testerEndRef} />
-            </div>
-
-            {/* Input */}
-            <div className="border-t border-gray-200 p-3 bg-white">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={testerInput}
-                  onChange={e => setTesterInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendTesterMessage()}
-                  placeholder="Escribe un mensaje..."
-                  className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                  disabled={testerLoading}
-                  autoFocus
-                />
-                <button
-                  onClick={sendTesterMessage}
-                  disabled={testerLoading || !testerInput.trim()}
-                  className="bg-purple-600 hover:bg-purple-700 text-white p-2.5 rounded-xl transition disabled:opacity-50"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Probador IA Drawer */}
+      <ProbadorDrawer show={showTester} onClose={() => setShowTester(false)} />
     </div>
   )
 }

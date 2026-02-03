@@ -169,6 +169,29 @@ const migrations = [
     name: 'add_system_prompt_to_chatbot_config',
     description: 'Agregar system_prompt editable a chatbot_config',
     sql: `ALTER TABLE chatbot_config ADD COLUMN system_prompt TEXT NULL AFTER custom_instructions`
+  },
+  // === Behavioral Rules (Rayos X / Correcciones conductuales) ===
+  {
+    name: 'create_behavioral_rules_table',
+    description: 'Crear tabla chatbot_behavioral_rules',
+    sql: `
+      CREATE TABLE IF NOT EXISTS chatbot_behavioral_rules (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        rule_text TEXT NOT NULL,
+        category ENUM('tone', 'knowledge', 'sales', 'format', 'safety', 'general') DEFAULT 'general',
+        priority INT DEFAULT 0,
+        is_active BOOLEAN DEFAULT TRUE,
+        source ENUM('admin', 'correction', 'auto') DEFAULT 'admin',
+        source_message_id INT NULL,
+        source_session_id INT NULL,
+        created_by VARCHAR(100) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_br_active (is_active),
+        INDEX idx_br_category (category),
+        INDEX idx_br_source (source)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `
   }
 ];
 

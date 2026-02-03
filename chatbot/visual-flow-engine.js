@@ -5,6 +5,7 @@
 
 const logger = require('pino')({ level: process.env.LOG_LEVEL || 'info' });
 const OpenAI = require('openai');
+const { createTrace, finalizeTrace, traceStep } = require('./trace-builder');
 
 class VisualFlowEngine {
   constructor(dbPool, classifier, sendMessage, emitFlowEvent = null, sendInteractiveButtons = null, sendInteractiveList = null, knowledgeRetriever = null, sendTypingIndicator = null) {
@@ -240,6 +241,7 @@ Usa solo informacion confirmada. Puedes mejorar redaccion y trato, pero sin camb
   async processMessage(phone, message, context = {}) {
     const normalizedMessage = message.toLowerCase().trim();
     const buttonId = context.buttonId; // ID del botón interactivo si fue presionado
+    const trace = context.__trace || null;
 
     // ========================================
     // 1. VERIFICAR KEYWORDS GLOBALES (siempre funcionan)
@@ -248,15 +250,59 @@ Usa solo informacion confirmada. Puedes mejorar redaccion y trato, pero sin camb
     if (globalKeywordResult) {
       // Si la keyword global devuelve algo, significa que manejó el mensaje
       if (globalKeywordResult.handled) {
+        if (trace) {
+          const kw = this.globalKeywords[normalizedMessage];
+          trace.globalKeyword = {
+            checked: true,
+            normalizedInput: normalizedMessage,
+            matched: true,
+            keyword: normalizedMessage,
+            action: kw ? kw.action : globalKeywordResult.action,
+            outcome: globalKeywordResult.type,
+            sessionCleared: ['show_menu', 'show_help', 'transfer', 'exit'].includes(kw ? kw.action : '')
+          };
+        }
         return globalKeywordResult;
       }
       // Si devuelve { continueFlow: true }, seguir con el flujo normal
+      if (trace) {
+        trace.globalKeyword = {
+          checked: true,
+          normalizedInput: normalizedMessage,
+          matched: true,
+          keyword: normalizedMessage,
+          action: 'greeting',
+          outcome: 'continueFlow',
+          sessionCleared: false
+        };
+      }
+    } else {
+      if (trace) {
+        trace.globalKeyword = {
+          checked: true,
+          normalizedInput: normalizedMessage,
+          matched: false,
+          keyword: null,
+          action: null,
+          outcome: 'no_match',
+          sessionCleared: false
+        };
+      }
     }
 
     // ========================================
     // 2. VERIFICAR SI HAY SESIÓN ACTIVA
     // ========================================
     let sessionState = this.sessionStates.get(phone);
+
+    if (trace) {
+      trace.sessionState = {
+        hasActiveSession: !!sessionState,
+        flowId: sessionState ? sessionState.flowId : null,
+        flowSlug: sessionState ? sessionState.flowSlug : null,
+        currentNodeId: sessionState ? sessionState.currentNodeId : null
+      };
+    }
 
     if (sessionState) {
       // Continuar flujo existente (pasar buttonId si existe)
@@ -347,29 +393,54 @@ Usa solo informacion confirmada. Puedes mejorar redaccion y trato, pero sin camb
       return null;
     }
 
+    const trace = (context && context.__trace) ? context.__trace : null;
+
     try {
       // Cargar datos del usuario para personalizar
       const savedFields = await this.loadContactFields(phone);
       const userName = savedFields.nombre || savedFields.name || '';
 
+      if (trace) {
+        trace.aiFallback = {
+          contactFields: savedFields,
+          userName
+        };
+      }
+
       // --- Conocimiento aprendido + precios (si el retriever esta disponible) ---
       let knowledgeContext = [];
       let priceContext = [];
       let recentHistory = [];
+      let vectorSearchResults = [];
+      let bm25SearchResults = [];
+      let vectorSearchDurationMs = 0;
+      let priceQueryDurationMs = 0;
+      let isPriceQueryResult = false;
+      let extractedProduct = null;
+      let extractedVariant = null;
 
       if (this.knowledgeRetriever) {
         // Buscar Q&A similares aprendidos
+        const vectorStart = Date.now();
         knowledgeContext = await this.knowledgeRetriever.retrieve(message).catch(err => {
           logger.error({ err }, 'Error en knowledge retriever');
           return [];
         });
+        vectorSearchDurationMs = Date.now() - vectorStart;
+        vectorSearchResults = knowledgeContext.filter(c => c.source === 'learned');
+        bm25SearchResults = knowledgeContext.filter(c => c.source === 'faq');
 
         // Buscar precios vigentes si es consulta de precio
-        if (this.knowledgeRetriever.isPriceQuery(message)) {
-          const { productName, variant } = this.knowledgeRetriever.extractProductInfo(message);
-          if (productName) {
-            priceContext = await this.knowledgeRetriever.findPrice(productName, variant).catch(() => []);
+        isPriceQueryResult = this.knowledgeRetriever.isPriceQuery(message);
+        if (isPriceQueryResult) {
+          const priceStart = Date.now();
+          const extracted = this.knowledgeRetriever.extractProductInfo(message);
+          extractedProduct = extracted.productName;
+          extractedVariant = extracted.variant;
+          if (extractedProduct) {
+            priceContext = await this.knowledgeRetriever.findPrice(extractedProduct, extractedVariant).catch(() => []);
           }
+          priceQueryDurationMs = Date.now() - priceStart;
         }
 
         // Cargar historial conversacional
@@ -378,11 +449,61 @@ Usa solo informacion confirmada. Puedes mejorar redaccion y trato, pero sin camb
         }
       }
 
+      if (trace) {
+        trace.aiFallback.knowledge = {
+          retrieverAvailable: !!this.knowledgeRetriever,
+          vectorSearch: {
+            ran: !!this.knowledgeRetriever,
+            results: vectorSearchResults.map(r => ({
+              source: r.source,
+              question: r.question,
+              answerPreview: (r.answer || '').slice(0, 120),
+              similarityScore: r.score || null,
+              qualityScore: r.qualityScore || null
+            })),
+            durationMs: vectorSearchDurationMs
+          },
+          bm25Search: {
+            ran: !!this.knowledgeRetriever,
+            resultsCount: bm25SearchResults.length,
+            results: bm25SearchResults.map(r => ({
+              source: r.source,
+              question: r.question,
+              answerPreview: (r.answer || '').slice(0, 120)
+            }))
+          },
+          combinedCount: knowledgeContext.length
+        };
+
+        trace.aiFallback.priceQuery = {
+          isPriceQuery: isPriceQueryResult,
+          extractedProduct,
+          extractedVariant,
+          pricesFound: priceContext.map(p => ({
+            productName: p.product_name,
+            variant: p.variant || null,
+            price: p.price
+          })),
+          durationMs: priceQueryDurationMs
+        };
+
+        trace.aiFallback.conversationHistory = {
+          loaded: recentHistory.length > 0,
+          turnsLoaded: recentHistory.length,
+          turns: recentHistory.map(t => ({
+            direction: t.direction,
+            text: (t.text || '').slice(0, 300),
+            timestamp: t.created_at || null
+          }))
+        };
+      }
+
       // --- Construir system prompt enriquecido ---
       const fidelityLevel = process.env.LEARNING_FIDELITY_LEVEL || 'enhanced';
       const fidelityInstruction = this._getFidelityInstruction(fidelityLevel);
 
       const config = await this.loadChatbotConfig();
+      const isCustomSystemPrompt = !!(config && config.system_prompt && config.system_prompt.trim());
       let systemPrompt = this._buildBaseSystemPrompt(config, userName);
 
       // Inyectar conocimiento aprendido
@@ -410,8 +531,26 @@ IMPORTANTE: Usa SOLO estos precios. Los precios en las respuestas del equipo pue
       }
 
       // Inyectar instrucciones personalizadas del admin
-      if (config && config.custom_instructions) {
+      const hasCustomInstructions = !!(config && config.custom_instructions);
+      if (hasCustomInstructions) {
         systemPrompt += `\n\n--- INSTRUCCIONES DEL ADMIN ---\n${config.custom_instructions}\n--- FIN INSTRUCCIONES ---`;
+      }
+
+      // Load behavioral rules
+      let behavioralRules = [];
+      try {
+        const [rules] = await this.db.query(
+          `SELECT rule_text, category FROM chatbot_behavioral_rules WHERE is_active = TRUE ORDER BY priority DESC LIMIT 30`
+        );
+        behavioralRules = rules;
+        if (rules.length > 0) {
+          const rulesText = rules.map(r => `- ${r.rule_text}`).join('\n');
+          systemPrompt += `\n\n--- REGLAS DE COMPORTAMIENTO ---\n${rulesText}\n--- FIN REGLAS ---`;
+        }
+      } catch (err) {
+        if (err.code !== 'ER_NO_SUCH_TABLE') {
+          logger.error({ err }, 'Error loading behavioral rules');
+        }
       }
 
       // --- Construir array de mensajes con historial ---
@@ -432,23 +571,84 @@ IMPORTANTE: Usa SOLO estos precios. Los precios en las respuestas del equipo pue
       // Mensaje actual del cliente
       messages.push({ role: 'user', content: message });
 
+      const aiModel = process.env.CHATBOT_AI_MODEL || 'gpt-4o-mini';
+      const aiTemperature = knowledgeContext.length > 0 ? 0.3 : 0.5;
+      const aiMaxTokens = 350;
+
+      // Estimate tokens (rough: 1 token ~ 4 chars)
+      const estimatedTokens = Math.ceil(messages.reduce((sum, m) => sum + (m.content || '').length, 0) / 4);
+
+      if (trace) {
+        trace.aiFallback.prompt = {
+          isCustomSystemPrompt,
+          hasCustomInstructions,
+          customInstructionsPreview: hasCustomInstructions ? (config.custom_instructions || '').slice(0, 200) : null,
+          fidelityLevel,
+          knowledgeInjected: knowledgeContext.length > 0,
+          knowledgePairsInjected: knowledgeContext.length,
+          pricesInjected: priceContext.length > 0,
+          behavioralRulesInjected: behavioralRules.length > 0,
+          behavioralRulesCount: behavioralRules.length,
+          totalSystemPromptChars: systemPrompt.length,
+          totalMessagesInArray: messages.length,
+          estimatedTokens,
+          systemPromptFull: systemPrompt,
+          behavioralRulesText: behavioralRules.length > 0 ? behavioralRules.map(r => `- ${r.rule_text}`).join('\n') : null,
+          customInstructionsText: hasCustomInstructions ? config.custom_instructions : null
+        };
+      }
+
       // --- Llamar a OpenAI ---
+      const openaiStart = Date.now();
       const aiResponse = await this.openai.chat.completions.create({
-        model: process.env.CHATBOT_AI_MODEL || 'gpt-4o-mini',
+        model: aiModel,
         messages,
-        temperature: knowledgeContext.length > 0 ? 0.3 : 0.5,
-        max_tokens: 350
+        temperature: aiTemperature,
+        max_tokens: aiMaxTokens
       });
+      const openaiDurationMs = Date.now() - openaiStart;
 
       const responseText = aiResponse.choices[0]?.message?.content || 'Gracias por tu mensaje. ¿En qué puedo ayudarte?';
 
+      if (trace) {
+        const usage = aiResponse.usage || {};
+        trace.aiFallback.openaiCall = {
+          model: aiModel,
+          temperature: aiTemperature,
+          maxTokens: aiMaxTokens,
+          durationMs: openaiDurationMs,
+          promptTokens: usage.prompt_tokens || null,
+          completionTokens: usage.completion_tokens || null,
+          totalTokens: usage.total_tokens || null,
+          finishReason: aiResponse.choices[0]?.finish_reason || null,
+          responseText,
+          responseLength: responseText.length
+        };
+      }
+
       // Enviar typing indicator antes de responder
+      let typingIndicatorSent = false;
       if (this.sendTypingIndicator && context.waMsgId) {
         await this.sendTypingIndicator(context.waMsgId);
+        typingIndicatorSent = true;
       }
 
       // Enviar con delay realista y guardar en BD
       const sentMessages = await this._sendBotResponse(phone, responseText, context);
+
+      if (trace) {
+        const parts = this._splitResponse(responseText);
+        trace.aiFallback.delivery = {
+          splitInto: parts.length,
+          parts: parts.map((part, idx) => ({
+            index: idx,
+            text: part,
+            charCount: part.length,
+            calculatedDelayMs: this._calculateTypingDelay(part)
+          })),
+          typingIndicatorSent
+        };
+      }
 
       logger.info({
         phone,
@@ -468,6 +668,11 @@ IMPORTANTE: Usa SOLO estos precios. Los precios en las respuestas del equipo pue
 
     } catch (err) {
       logger.error({ err, phone }, 'Error in AI fallback');
+      if (trace && trace.aiFallback) {
+        trace.aiFallback.error = { stage: 'handleAIFallback', message: err.message || String(err) };
+      } else if (trace) {
+        trace.aiFallback = { error: { stage: 'handleAIFallback', message: err.message || String(err) } };
+      }
       return null;
     }
   }
@@ -550,19 +755,23 @@ IMPORTANTE: Usa SOLO estos precios. Los precios en las respuestas del equipo pue
     const parts = this._splitResponse(fullText);
     const waMsgId = context.waMsgId;
     const sessionId = context.sessionId;
+    const trace = context.__trace || null;
+    const skipDelays = !!trace; // Skip all delays in trace/tester mode
     const sentMessages = [];
 
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
 
       // Enviar typing indicator antes de cada parte
-      if (this.sendTypingIndicator && waMsgId) {
+      if (!skipDelays && this.sendTypingIndicator && waMsgId) {
         await this.sendTypingIndicator(waMsgId);
       }
 
-      // Delay proporcional al texto
+      // Delay proporcional al texto (skip in trace mode)
       const delay = this._calculateTypingDelay(part);
-      await new Promise(resolve => setTimeout(resolve, delay));
+      if (!skipDelays) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
 
       // Enviar parte
       let msgId = null;
@@ -587,8 +796,8 @@ IMPORTANTE: Usa SOLO estos precios. Los precios en las respuestas del equipo pue
 
       sentMessages.push({ waMsgId: msgId, dbId, text: part });
 
-      // Pausa extra entre mensajes
-      if (i < parts.length - 1) {
+      // Pausa extra entre mensajes (skip in trace mode)
+      if (i < parts.length - 1 && !skipDelays) {
         await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
@@ -604,22 +813,134 @@ IMPORTANTE: Usa SOLO estos precios. Los precios en las respuestas del equipo pue
       await this.loadActiveFlows();
     }
 
+    const trace = (context && context.__trace) ? context.__trace : null;
+
     // Clasificar el mensaje
     let classification = null;
+    const classifyStart = Date.now();
     if (this.classifier) {
       classification = await this.classifier.classify(message, context);
     }
+    const classifyDurationMs = Date.now() - classifyStart;
+
+    if (trace) {
+      trace.classification = {
+        intent: classification?.intent || null,
+        urgency: classification?.urgency || null,
+        leadScore: classification?.leadScore || null,
+        sentiment: classification?.sentiment || null,
+        ruleCount: classification?._ruleCount || null,
+        durationMs: classifyDurationMs
+      };
+    }
 
     // Buscar flujo que coincida con el trigger
+    const flowsEvaluated = [];
+    let matchedFlowResult = null;
+
     for (const flow of this.activeFlows) {
-      if (this.matchTrigger(flow.triggerConfig, message, classification)) {
-        return flow;
+      const { matched, reason } = this.matchTriggerWithReason(flow.triggerConfig, message, classification);
+      if (trace) {
+        flowsEvaluated.push({
+          flowId: flow.id,
+          name: flow.name,
+          triggerType: flow.triggerConfig?.type || 'unknown',
+          matched,
+          reason
+        });
+      }
+      if (matched && !matchedFlowResult) {
+        matchedFlowResult = flow;
+        if (!trace) break; // Without trace, stop at first match
       }
     }
 
-    // Si no hay match, usar flujo por defecto si existe
-    const defaultFlow = this.activeFlows.find(f => f.isDefault);
-    return defaultFlow || null;
+    let usedDefault = false;
+    if (!matchedFlowResult) {
+      // Si no hay match, usar flujo por defecto si existe
+      const defaultFlow = this.activeFlows.find(f => f.isDefault);
+      if (defaultFlow) {
+        matchedFlowResult = defaultFlow;
+        usedDefault = true;
+      }
+    }
+
+    if (trace) {
+      trace.flowMatching = {
+        activeFlowCount: this.activeFlows.length,
+        flowsEvaluated,
+        matchedFlow: matchedFlowResult ? { flowId: matchedFlowResult.id, name: matchedFlowResult.name, slug: matchedFlowResult.slug } : null,
+        usedDefault,
+        outcome: matchedFlowResult ? (usedDefault ? 'default_flow' : 'trigger_matched') : 'no_match'
+      };
+    }
+
+    return matchedFlowResult || null;
+  }
+
+  /**
+   * Wrapper around matchTrigger that also returns a reason string
+   */
+  matchTriggerWithReason(triggerConfig, message, classification) {
+    if (!triggerConfig || !triggerConfig.type) {
+      return { matched: false, reason: 'no trigger config or type' };
+    }
+
+    const normalizedMessage = message.toLowerCase().trim();
+
+    switch (triggerConfig.type) {
+      case 'keyword': {
+        const keywords = triggerConfig.keywords || [];
+        const matchedKw = keywords.find(kw => normalizedMessage.includes(kw.toLowerCase()));
+        if (matchedKw) {
+          return { matched: true, reason: `keyword "${matchedKw}" found in message` };
+        }
+        return { matched: false, reason: `no keywords matched (checked: ${keywords.join(', ')})` };
+      }
+
+      case 'classification': {
+        if (!classification) return { matched: false, reason: 'no classification available' };
+        const conditions = triggerConfig.conditions || {};
+
+        if (conditions.intent) {
+          const intents = Array.isArray(conditions.intent) ? conditions.intent : [conditions.intent];
+          if (!intents.includes(classification.intent?.type)) {
+            return { matched: false, reason: `intent "${classification.intent?.type}" not in required [${intents.join(', ')}]` };
+          }
+        }
+        if (conditions.urgency && classification.urgency?.level !== conditions.urgency) {
+          return { matched: false, reason: `urgency "${classification.urgency?.level}" != required "${conditions.urgency}"` };
+        }
+        if (conditions.lead_score_min && classification.leadScore?.value < conditions.lead_score_min) {
+          return { matched: false, reason: `leadScore ${classification.leadScore?.value} < min ${conditions.lead_score_min}` };
+        }
+        return { matched: true, reason: 'all classification conditions met' };
+      }
+
+      case 'intent': {
+        if (!classification || !classification.intent) {
+          return { matched: false, reason: 'no classification/intent available' };
+        }
+        const targetIntents = triggerConfig.intents || [];
+        const confidenceThreshold = triggerConfig.confidence_threshold || 0.5;
+        const detectedIntent = classification.intent.type;
+        const detectedConfidence = classification.intent.confidence || 0;
+
+        if (!targetIntents.includes(detectedIntent)) {
+          return { matched: false, reason: `intent "${detectedIntent}" not in targets [${targetIntents.join(', ')}]` };
+        }
+        if (detectedConfidence < confidenceThreshold) {
+          return { matched: false, reason: `confidence ${detectedConfidence.toFixed(2)} < threshold ${confidenceThreshold}` };
+        }
+        return { matched: true, reason: `intent "${detectedIntent}" matched with confidence ${detectedConfidence.toFixed(2)}` };
+      }
+
+      case 'always':
+        return { matched: true, reason: 'trigger type is always' };
+
+      default:
+        return { matched: false, reason: `unknown trigger type "${triggerConfig.type}"` };
+    }
   }
 
   /**
