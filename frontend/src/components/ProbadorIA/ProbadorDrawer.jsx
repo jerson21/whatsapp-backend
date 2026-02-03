@@ -127,6 +127,10 @@ export default function ProbadorDrawer({ show, onClose }) {
       setCorrecting(null)
     } catch (err) {
       console.error('Error submitting correction:', err)
+      setTesterMessages(prev => [
+        ...prev,
+        { role: 'system', text: 'Error al guardar correccion: ' + err.message, time: new Date() }
+      ])
     } finally {
       setCorrectionSubmitting(false)
     }

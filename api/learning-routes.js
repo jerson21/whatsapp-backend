@@ -637,7 +637,7 @@ Genera el reporte JSON de auto-analisis.`;
         return res.status(400).json({ ok: false, error: 'question and correctedAnswer are required' });
       }
       const [result] = await pool.query(
-        `INSERT INTO learned_qa_pairs (question, answer, status, channel, quality_score) VALUES (?, ?, 'approved', 'tester_correction', 1.0)`,
+        `INSERT INTO learned_qa_pairs (session_id, question, answer, status, channel, quality_score) VALUES (0, ?, ?, 'approved', 'tester_correction', 100)`,
         [question.trim(), correctedAnswer.trim()]
       );
       res.json({ ok: true, id: result.insertId });
