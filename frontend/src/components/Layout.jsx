@@ -1,5 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
+import { useTranslation } from 'react-i18next'
 import {
   LayoutDashboard,
   MessageSquare,
@@ -12,26 +13,28 @@ import {
   Radio,
   UserCog,
   Building2,
-  Brain
+  Brain,
+  Languages
 } from 'lucide-react'
 
 export default function Layout() {
   const navigate = useNavigate()
   const { agent, logout } = useAuthStore()
+  const { t, i18n } = useTranslation('common')
   const isSupervisor = agent?.role === 'supervisor'
 
   const navItems = [
-    { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/conversations', icon: MessageSquare, label: 'Conversaciones' },
+    { to: '/dashboard', icon: LayoutDashboard, label: t('nav.dashboard') },
+    { to: '/conversations', icon: MessageSquare, label: t('nav.conversations') },
     ...(isSupervisor ? [
-      { to: '/agents', icon: UserCog, label: 'Agentes' },
-      { to: '/departments', icon: Building2, label: 'Departamentos' },
-      { to: '/flows', icon: GitBranch, label: 'Flujos' },
-      { to: '/logs', icon: Activity, label: 'Logs' },
-      { to: '/leads', icon: Users, label: 'Leads' },
-      { to: '/analytics', icon: BarChart3, label: 'Analytics' },
-      { to: '/monitor', icon: Radio, label: 'Monitor' },
-      { to: '/learning', icon: Brain, label: 'Cerebro IA' }
+      { to: '/agents', icon: UserCog, label: t('nav.agents') },
+      { to: '/departments', icon: Building2, label: t('nav.departments') },
+      { to: '/flows', icon: GitBranch, label: t('nav.flows') },
+      { to: '/logs', icon: Activity, label: t('nav.logs') },
+      { to: '/leads', icon: Users, label: t('nav.leads') },
+      { to: '/analytics', icon: BarChart3, label: t('nav.analytics') },
+      { to: '/monitor', icon: Radio, label: t('nav.monitor') },
+      { to: '/learning', icon: Brain, label: t('nav.learning') }
     ] : [])
   ]
 
@@ -40,7 +43,12 @@ export default function Layout() {
     navigate('/login')
   }
 
-  const roleName = isSupervisor ? 'Supervisor' : 'Agente'
+  const toggleLanguage = () => {
+    const newLang = i18n.language?.startsWith('es') ? 'en' : 'es'
+    i18n.changeLanguage(newLang)
+  }
+
+  const roleName = isSupervisor ? t('roles.supervisor') : t('roles.agent')
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -52,8 +60,8 @@ export default function Layout() {
             <Bot className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="font-bold text-gray-800">Chat Platform</h1>
-            <p className="text-xs text-gray-400">Respaldos Chile</p>
+            <h1 className="font-bold text-gray-800">{t('platformName')}</h1>
+            <p className="text-xs text-gray-400">{t('companyName')}</p>
           </div>
         </div>
 
@@ -77,6 +85,17 @@ export default function Layout() {
           ))}
         </nav>
 
+        {/* Language Toggle */}
+        <div className="px-4 mb-2">
+          <button
+            onClick={toggleLanguage}
+            className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition"
+          >
+            <Languages className="w-5 h-5" />
+            <span>{i18n.language?.startsWith('es') ? 'English' : 'Español'}</span>
+          </button>
+        </div>
+
         {/* User */}
         <div className="p-4 border-t border-gray-200">
           <div className="flex items-center justify-between">
@@ -97,7 +116,7 @@ export default function Layout() {
             <button
               onClick={handleLogout}
               className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
-              title="Cerrar sesion"
+              title={t('logout')}
             >
               <LogOut className="w-5 h-5" />
             </button>

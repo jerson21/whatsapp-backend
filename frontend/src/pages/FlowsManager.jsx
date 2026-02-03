@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { fetchFlows, fetchTemplates, createFromTemplate, activateFlow, deleteFlow, duplicateFlow, fetchMetaTemplates, getVisualFlowsStatus, setVisualFlowsStatus } from '../api/flows'
 import { format } from 'date-fns'
-import { es } from 'date-fns/locale'
+import { getDateLocale } from '../i18n/dateLocale'
 import TemplateTestModal from '../components/TemplateTestModal'
 
 export default function FlowsManager() {
   const navigate = useNavigate()
+  const { t } = useTranslation('flows')
   const [activeTab, setActiveTab] = useState('flows') // 'flows', 'templates', or 'whatsapp'
   const [flows, setFlows] = useState([])
   const [templates, setTemplates] = useState([])
@@ -47,7 +49,7 @@ export default function FlowsManager() {
       const data = await setVisualFlowsStatus(newValue)
       setVisualFlowsEnabled(data.enabled)
       showNotification(
-        data.enabled ? 'Modo automático ACTIVADO' : 'Modo automático DESACTIVADO',
+        data.enabled ? t('autoModeOn') : t('autoModeOff'),
         data.enabled ? 'success' : 'info'
       )
     } catch (err) {
@@ -89,7 +91,7 @@ export default function FlowsManager() {
       setMetaTemplates(data.items || [])
     } catch (err) {
       console.error('Error loading Meta templates:', err)
-      showNotification(`Error al cargar plantillas: ${err.message}`, 'error')
+      showNotification(`${t('errorLoadingTemplates')}: ${err.message}`, 'error')
     } finally {
       setMetaLoading(false)
     }
@@ -103,7 +105,7 @@ export default function FlowsManager() {
   const handleCreateFromTemplate = async (templateId, templateName) => {
     try {
       const result = await createFromTemplate(templateId, null)
-      showNotification(`Flujo "${templateName}" creado correctamente`, 'success')
+      showNotification(t('flowCreated', { name: templateName }), 'success')
       await loadData()
 
       // Navigate to FlowBuilder to edit the new flow
@@ -112,7 +114,7 @@ export default function FlowsManager() {
       }
     } catch (err) {
       console.error('Error creating from template:', err)
-      showNotification(`Error al crear flujo: ${err.message}`, 'error')
+      showNotification(`${t('errorCreating')}: ${err.message}`, 'error')
     }
   }
 
@@ -121,7 +123,7 @@ export default function FlowsManager() {
       const newActiveState = !flow.is_active
       await activateFlow(flow.id, newActiveState)
       showNotification(
-        `Flujo "${flow.name}" ${newActiveState ? 'activado' : 'desactivado'}`,
+        newActiveState ? t('flowActivated', { name: flow.name }) : t('flowDeactivated', { name: flow.name }),
         'success'
       )
       await loadData()
@@ -133,27 +135,27 @@ export default function FlowsManager() {
 
   const handleDuplicate = async (flow) => {
     try {
-      await duplicateFlow(flow.id, `${flow.name} (copia)`)
-      showNotification(`Flujo duplicado correctamente`, 'success')
+      await duplicateFlow(flow.id, `${flow.name} (${t('copy')})`)
+      showNotification(t('duplicated'), 'success')
       await loadData()
     } catch (err) {
       console.error('Error duplicating flow:', err)
-      showNotification(`Error al duplicar: ${err.message}`, 'error')
+      showNotification(`${t('errorDuplicating')}: ${err.message}`, 'error')
     }
   }
 
   const handleDelete = async (flow) => {
-    if (!confirm(`¿Estás seguro de eliminar el flujo "${flow.name}"?`)) {
+    if (!confirm(t('deleteConfirm', { name: flow.name }))) {
       return
     }
 
     try {
       await deleteFlow(flow.id)
-      showNotification(`Flujo eliminado correctamente`, 'success')
+      showNotification(t('deleted'), 'success')
       await loadData()
     } catch (err) {
       console.error('Error deleting flow:', err)
-      showNotification(`Error al eliminar: ${err.message}`, 'error')
+      showNotification(`${t('errorDeleting')}: ${err.message}`, 'error')
     }
   }
 
@@ -173,7 +175,7 @@ export default function FlowsManager() {
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Cargando flujos...</p>
+          <p className="text-gray-600">{t('loadingFlows')}</p>
         </div>
       </div>
     )
@@ -183,13 +185,13 @@ export default function FlowsManager() {
     return (
       <div className="p-8">
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <h3 className="text-red-800 font-semibold mb-2">Error al cargar flujos</h3>
+          <h3 className="text-red-800 font-semibold mb-2">{t('errorLoading')}</h3>
           <p className="text-red-600">{error}</p>
           <button
             onClick={loadData}
             className="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
           >
-            Reintentar
+            {t('common:actions.retry')}
           </button>
         </div>
       </div>
@@ -201,9 +203,9 @@ export default function FlowsManager() {
       {/* Header */}
       <div className="mb-6 flex justify-between items-start">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Gestión de Flujos</h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">{t('title')}</h1>
           <p className="text-gray-600">
-            Administra tus flujos conversacionales y crea nuevos desde plantillas predefinidas
+            {t('subtitle')}
           </p>
         </div>
 
@@ -215,10 +217,10 @@ export default function FlowsManager() {
         }`}>
           <div className="text-right">
             <p className={`text-sm font-medium ${visualFlowsEnabled ? 'text-green-800' : 'text-gray-600'}`}>
-              Modo Automático
+              {t('autoMode')}
             </p>
             <p className={`text-xs ${visualFlowsEnabled ? 'text-green-600' : 'text-gray-500'}`}>
-              {visualFlowsEnabled ? 'Bot respondiendo' : 'Bot pausado'}
+              {visualFlowsEnabled ? t('botResponding') : t('botPaused')}
             </p>
           </div>
           <button
@@ -261,7 +263,7 @@ export default function FlowsManager() {
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            Mis Flujos ({flows.length})
+            {t('myFlows')} ({flows.length})
           </button>
           <button
             onClick={() => setActiveTab('templates')}
@@ -271,7 +273,7 @@ export default function FlowsManager() {
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            Plantillas ({templates.length})
+            {t('templates')} ({templates.length})
           </button>
           <button
             onClick={() => setActiveTab('whatsapp')}
@@ -284,7 +286,7 @@ export default function FlowsManager() {
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
               <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
             </svg>
-            WhatsApp Templates
+            {t('waTemplates')}
           </button>
         </div>
       </div>
@@ -297,16 +299,16 @@ export default function FlowsManager() {
               <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              <h3 className="mt-2 text-sm font-medium text-gray-900">No tienes flujos creados</h3>
+              <h3 className="mt-2 text-sm font-medium text-gray-900">{t('noFlows')}</h3>
               <p className="mt-1 text-sm text-gray-500">
-                Comienza creando un flujo desde una plantilla
+                {t('startFromTemplate')}
               </p>
               <div className="mt-6">
                 <button
                   onClick={() => setActiveTab('templates')}
                   className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
                 >
-                  Ver Plantillas
+                  {t('viewTemplates')}
                 </button>
               </div>
             </div>
@@ -316,19 +318,19 @@ export default function FlowsManager() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Nombre
+                      {t('name')}
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Estado
+                      {t('state')}
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Estadísticas
+                      {t('statistics')}
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Última actualización
+                      {t('lastUpdated')}
                     </th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Acciones
+                      {t('actions')}
                     </th>
                   </tr>
                 </thead>
@@ -342,7 +344,7 @@ export default function FlowsManager() {
                               {flow.name}
                               {flow.is_default && (
                                 <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                  Por defecto
+                                  {t('default')}
                                 </span>
                               )}
                             </div>
@@ -361,18 +363,18 @@ export default function FlowsManager() {
                               : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
                           }`}
                         >
-                          {flow.is_active ? 'Activo' : 'Inactivo'}
+                          {flow.is_active ? t('active') : t('inactive')}
                         </button>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <div className="flex flex-col space-y-1">
-                          <span>Ejecutado: {flow.times_triggered || 0} veces</span>
-                          <span>Completado: {flow.times_completed || 0} veces</span>
+                          <span>{t('executed', { count: flow.times_triggered || 0 })}</span>
+                          <span>{t('completed', { count: flow.times_completed || 0 })}</span>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {flow.updated_at
-                          ? format(new Date(flow.updated_at), 'dd MMM yyyy, HH:mm', { locale: es })
+                          ? format(new Date(flow.updated_at), 'dd MMM yyyy, HH:mm', { locale: getDateLocale() })
                           : '-'
                         }
                       </td>
@@ -381,7 +383,7 @@ export default function FlowsManager() {
                           <button
                             onClick={() => navigate(`/flows/builder/${flow.id}`)}
                             className="text-blue-600 hover:text-blue-900"
-                            title="Editar"
+                            title={t('common:actions.edit')}
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -390,7 +392,7 @@ export default function FlowsManager() {
                           <button
                             onClick={() => handleDuplicate(flow)}
                             className="text-gray-600 hover:text-gray-900"
-                            title="Duplicar"
+                            title={t('duplicate')}
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -399,7 +401,7 @@ export default function FlowsManager() {
                           <button
                             onClick={() => handleDelete(flow)}
                             className="text-red-600 hover:text-red-900"
-                            title="Eliminar"
+                            title={t('common:actions.delete')}
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -442,7 +444,7 @@ export default function FlowsManager() {
                   <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
                   </svg>
-                  <span>{template.nodes_count} nodos</span>
+                  <span>{t('nodes', { count: template.nodes_count })}</span>
                 </div>
 
                 {template.features && template.features.length > 0 && (
@@ -462,7 +464,7 @@ export default function FlowsManager() {
                   onClick={() => handleCreateFromTemplate(template.id, template.name)}
                   className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
                 >
-                  Crear desde esta plantilla
+                  {t('createFromTemplate')}
                 </button>
               </div>
             </div>
@@ -476,34 +478,34 @@ export default function FlowsManager() {
           {/* Filtros */}
           <div className="mb-6 flex flex-wrap gap-4 items-center">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('state')}</label>
               <select
                 value={metaFilters.status}
                 onChange={(e) => setMetaFilters({ ...metaFilters, status: e.target.value })}
                 className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-green-500 focus:border-green-500"
               >
-                <option value="">Todos</option>
-                <option value="APPROVED">Aprobadas</option>
-                <option value="PENDING">Pendientes</option>
-                <option value="REJECTED">Rechazadas</option>
+                <option value="">{t('allTemplates')}</option>
+                <option value="APPROVED">{t('approved')}</option>
+                <option value="PENDING">{t('pending')}</option>
+                <option value="REJECTED">{t('rejected')}</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('category')}</label>
               <select
                 value={metaFilters.category}
                 onChange={(e) => setMetaFilters({ ...metaFilters, category: e.target.value })}
                 className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-green-500 focus:border-green-500"
               >
-                <option value="">Todas</option>
-                <option value="MARKETING">Marketing</option>
-                <option value="UTILITY">Utilidad</option>
-                <option value="AUTHENTICATION">Autenticación</option>
+                <option value="">{t('allTemplates')}</option>
+                <option value="MARKETING">{t('marketing')}</option>
+                <option value="UTILITY">{t('utility')}</option>
+                <option value="AUTHENTICATION">{t('authentication')}</option>
               </select>
             </div>
             <div className="flex-1"></div>
             <div className="text-sm text-gray-500">
-              {metaTemplates.length} plantillas encontradas
+              {t('templatesFound', { count: metaTemplates.length })}
             </div>
           </div>
 
@@ -511,16 +513,16 @@ export default function FlowsManager() {
           {metaLoading ? (
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
-              <span className="ml-3 text-gray-600">Cargando plantillas de Meta...</span>
+              <span className="ml-3 text-gray-600">{t('loadingMeta')}</span>
             </div>
           ) : metaTemplates.length === 0 ? (
             <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
               <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
-              <h3 className="mt-2 text-sm font-medium text-gray-900">No se encontraron plantillas</h3>
+              <h3 className="mt-2 text-sm font-medium text-gray-900">{t('noTemplates')}</h3>
               <p className="mt-1 text-sm text-gray-500">
-                Ajusta los filtros o crea plantillas en Meta Business Suite
+                {t('adjustFilters')}
               </p>
             </div>
           ) : (
@@ -570,7 +572,7 @@ export default function FlowsManager() {
                       {/* Preview del mensaje */}
                       <div className="bg-gray-50 rounded-lg p-3 mb-4 max-h-32 overflow-y-auto">
                         <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                          {bodyText.length > 200 ? bodyText.substring(0, 200) + '...' : bodyText || '(Sin contenido)'}
+                          {bodyText.length > 200 ? bodyText.substring(0, 200) + '...' : bodyText || t('noContent')}
                         </p>
                       </div>
 
@@ -584,7 +586,7 @@ export default function FlowsManager() {
                             : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                         }`}
                       >
-                        {template.status === 'APPROVED' ? 'Probar Plantilla' : 'No disponible'}
+                        {template.status === 'APPROVED' ? t('testTemplate') : t('notAvailable')}
                       </button>
                     </div>
                   </div>

@@ -1,0 +1,10 @@
+{
+  "subtitle": "Enter your credentials to continue",
+  "username": "Username",
+  "usernamePlaceholder": "admin",
+  "password": "Password",
+  "submitting": "Signing in...",
+  "submit": "Sign in",
+  "error": "Login failed",
+  "footer": "Respaldos Chile © 2025"
+}

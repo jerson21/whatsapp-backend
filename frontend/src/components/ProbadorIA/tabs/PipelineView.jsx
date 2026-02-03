@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   MessageSquare, Shield, Zap, RefreshCw, Target,
   Brain, User, BookOpen, DollarSign, Clock,
@@ -11,7 +12,7 @@ import PipelineStep from './PipelineStep'
  * Backend fields: trace.entry, trace.modeCheck, trace.globalKeyword,
  * trace.sessionState, trace.classification, trace.flowMatching, trace.aiFallback, trace.result
  */
-function buildSteps(trace) {
+function buildSteps(trace, t) {
   if (!trace) return []
 
   const steps = []
@@ -19,7 +20,7 @@ function buildSteps(trace) {
   // 1. Mensaje recibido
   steps.push({
     id: 'message_received',
-    label: 'Mensaje recibido',
+    label: t('probador.messageReceived'),
     summary: trace.inputMessage
       ? `"${trace.inputMessage.slice(0, 40)}${trace.inputMessage.length > 40 ? '...' : ''}"`
       : '',
@@ -38,7 +39,7 @@ function buildSteps(trace) {
   const mc = trace.modeCheck
   steps.push({
     id: 'session_mode',
-    label: 'Modo sesion',
+    label: t('probador.sessionMode'),
     summary: mc
       ? `${mc.mode} (${mc.modeSource}) → ${mc.outcome}`
       : 'automatic',
@@ -52,10 +53,10 @@ function buildSteps(trace) {
   const gk = trace.globalKeyword
   steps.push({
     id: 'global_keywords',
-    label: 'Keywords globales',
+    label: t('probador.globalKeywords'),
     summary: gk?.matched
-      ? `Match: "${gk.keyword}" → ${gk.action}`
-      : 'Sin match',
+      ? t('probador.matched', { keyword: gk.keyword, action: gk.action })
+      : t('probador.noMatch'),
     timing: null,
     status: gk?.matched ? 'completed' : 'skipped',
     icon: Zap,
@@ -66,10 +67,10 @@ function buildSteps(trace) {
   const ss = trace.sessionState
   steps.push({
     id: 'active_session',
-    label: 'Sesion activa',
+    label: t('probador.activeSession'),
     summary: ss?.hasActiveSession
-      ? `Flujo #${ss.flowId} en nodo ${ss.currentNodeId}`
-      : 'Sin flujo activo',
+      ? t('probador.flowAtNode', { flowId: ss.flowId, nodeId: ss.currentNodeId })
+      : t('probador.noActiveFlow'),
     timing: null,
     status: ss?.hasActiveSession ? 'completed' : 'skipped',
     icon: RefreshCw,
@@ -80,10 +81,10 @@ function buildSteps(trace) {
   const cls = trace.classification
   steps.push({
     id: 'classification',
-    label: 'Clasificacion',
+    label: t('probador.classification'),
     summary: cls?.ran
       ? `Intent: ${cls.intent?.type || 'unknown'} (${Math.round((cls.intent?.confidence || 0) * 100)}%) · ${cls.sentiment || 'neutral'} · Lead: ${cls.leadScore?.value || 0}`
-      : 'No ejecutada',
+      : t('probador.notExecuted'),
     timing: cls?.durationMs || null,
     status: cls?.ran ? 'completed' : 'skipped',
     icon: Target,
@@ -95,10 +96,10 @@ function buildSteps(trace) {
   const fm = trace.flowMatching
   steps.push({
     id: 'flow_match',
-    label: 'Match flujos',
+    label: t('probador.flowMatch'),
     summary: fm
-      ? `${fm.activeFlowCount || 0} flujos · ${fm.outcome === 'flow_matched' ? `Match: ${fm.matchedFlow?.flowName}` : fm.outcome === 'default_used' ? 'Default usado' : 'Sin match → AI'}`
-      : 'No evaluado',
+      ? `${fm.activeFlowCount || 0} ${t('common:nav.flows').toLowerCase()} · ${fm.outcome === 'flow_matched' ? `Match: ${fm.matchedFlow?.flowName}` : fm.outcome === 'default_used' ? t('probador.defaultUsed') : t('probador.noMatchToAI')}`
+      : t('probador.notEvaluated'),
     timing: null,
     status: fm?.outcome === 'flow_matched' ? 'completed' : (fm?.outcome === 'no_match' ? 'skipped' : 'completed'),
     icon: GitBranch,
@@ -119,8 +120,8 @@ function buildSteps(trace) {
     // 7a. Contacto
     aiChildren.push({
       id: 'ai_contact',
-      label: 'Contacto',
-      summary: ai.userName ? `${ai.userName}` : 'Sin nombre',
+      label: t('probador.contact'),
+      summary: ai.userName ? `${ai.userName}` : t('probador.noName'),
       timing: null,
       status: 'completed',
       icon: User,
@@ -132,10 +133,10 @@ function buildSteps(trace) {
     const pairsFound = kn ? (kn.vectorSearch?.results?.length || 0) + (kn.bm25Search?.resultsCount || 0) : 0
     aiChildren.push({
       id: 'ai_knowledge',
-      label: 'Conocimiento',
+      label: t('probador.knowledgeLabel'),
       summary: kn
-        ? `${kn.combinedCount || 0} pares (vector: ${kn.vectorSearch?.results?.length || 0}, BM25: ${kn.bm25Search?.resultsCount || 0})`
-        : '0 pares',
+        ? `${kn.combinedCount || 0} ${t('probador.pairs')} (vector: ${kn.vectorSearch?.results?.length || 0}, BM25: ${kn.bm25Search?.resultsCount || 0})`
+        : `0 ${t('probador.pairs')}`,
       timing: kn?.vectorSearch?.durationMs || null,
       status: pairsFound > 0 ? 'completed' : 'skipped',
       icon: BookOpen,
@@ -151,12 +152,12 @@ function buildSteps(trace) {
     const pq = ai.priceQuery
     aiChildren.push({
       id: 'ai_prices',
-      label: 'Precios',
+      label: t('probador.pricesLabel'),
       summary: pq
         ? (pq.isPriceQuery
-          ? `${pq.pricesFound?.length || 0} precios encontrados`
-          : 'No es consulta de precio')
-        : 'No consultado',
+          ? t('probador.pricesFoundSummary', { count: pq.pricesFound?.length || 0 })
+          : t('probador.notPriceQuery'))
+        : t('probador.notQueried'),
       timing: pq?.durationMs || null,
       status: pq?.pricesFound?.length > 0 ? 'completed' : 'skipped',
       icon: DollarSign,
@@ -167,10 +168,10 @@ function buildSteps(trace) {
     const hist = ai.conversationHistory
     aiChildren.push({
       id: 'ai_history',
-      label: 'Historial',
+      label: t('probador.historyLabel'),
       summary: hist
-        ? `${hist.turnsLoaded || 0} turnos`
-        : '0 turnos',
+        ? t('probador.turns', { count: hist.turnsLoaded || 0 })
+        : t('probador.turns', { count: 0 }),
       timing: null,
       status: hist?.turnsLoaded > 0 ? 'completed' : 'skipped',
       icon: Clock,
@@ -181,9 +182,9 @@ function buildSteps(trace) {
     const pr = ai.prompt
     aiChildren.push({
       id: 'ai_prompt',
-      label: 'Prompt construido',
+      label: t('probador.promptBuilt'),
       summary: pr
-        ? `~${pr.estimatedTokens || '?'} tokens · ${pr.totalMessagesInArray || '?'} msgs${pr.knowledgeInjected ? ' +conocimiento' : ''}${pr.behavioralRulesInjected ? ' +reglas' : ''}`
+        ? `~${pr.estimatedTokens || '?'} tokens · ${pr.totalMessagesInArray || '?'} msgs${pr.knowledgeInjected ? ' ' + t('probador.plusKnowledge') : ''}${pr.behavioralRulesInjected ? ' ' + t('probador.plusRules') : ''}`
         : '',
       timing: null,
       status: 'completed',
@@ -199,7 +200,7 @@ function buildSteps(trace) {
       label: 'OpenAI',
       summary: oc
         ? `${oc.model} · temp ${oc.temperature} · ${oc.durationMs}ms · ${oc.totalTokens || '?'} tokens`
-        : 'Esperando...',
+        : t('probador.openaiWaiting'),
       timing: oc?.durationMs || null,
       status: oc ? 'completed' : 'processing',
       icon: Sparkles,
@@ -220,9 +221,9 @@ function buildSteps(trace) {
     const dl = ai.delivery
     aiChildren.push({
       id: 'ai_delivery',
-      label: 'Entrega',
+      label: t('probador.delivery'),
       summary: dl
-        ? `${dl.splitInto} msg(s) enviados`
+        ? t('probador.msgsSent', { count: dl.splitInto })
         : '',
       timing: null,
       status: dl ? 'completed' : 'skipped',
@@ -232,8 +233,8 @@ function buildSteps(trace) {
 
     steps.push({
       id: 'ai_fallback',
-      label: 'AI Fallback',
-      summary: trace.result?.totalPipelineMs ? `Total: ${trace.result.totalPipelineMs}ms` : '',
+      label: t('probador.aiFallback'),
+      summary: trace.result?.totalPipelineMs ? t('probador.pipelineTotal', { ms: trace.result.totalPipelineMs }) : '',
       timing: trace.result?.totalPipelineMs || null,
       status: ai.error ? 'error' : 'completed',
       icon: Brain,
@@ -246,8 +247,8 @@ function buildSteps(trace) {
   if (!ai && trace.result) {
     steps.push({
       id: 'result',
-      label: 'Resultado',
-      summary: `${trace.result.type} · ${trace.result.responseSent ? 'Respuesta enviada' : 'Sin respuesta'}`,
+      label: t('probador.result'),
+      summary: `${trace.result.type} · ${trace.result.responseSent ? t('probador.responseSent') : t('probador.noResponse2')}`,
       timing: trace.result.totalPipelineMs || null,
       status: trace.result.responseSent ? 'completed' : 'skipped',
       icon: Check,
@@ -258,18 +259,19 @@ function buildSteps(trace) {
   return steps
 }
 
-function buildLoadingSteps() {
+function buildLoadingSteps(t) {
   return [
-    { id: 'message_received', label: 'Mensaje recibido', summary: '', timing: 0, status: 'completed', icon: MessageSquare },
-    { id: 'session_mode', label: 'Modo sesion', summary: 'Evaluando...', timing: null, status: 'processing', icon: Shield },
-    { id: 'global_keywords', label: 'Keywords globales', summary: 'Buscando...', timing: null, status: 'processing', icon: Zap },
-    { id: 'active_session', label: 'Sesion activa', summary: 'Verificando...', timing: null, status: 'processing', icon: RefreshCw },
-    { id: 'classification', label: 'Clasificacion', summary: 'Analizando...', timing: null, status: 'processing', icon: Target },
-    { id: 'ai_fallback', label: 'AI Fallback', summary: 'Procesando...', timing: null, status: 'processing', icon: Brain }
+    { id: 'message_received', label: t('probador.messageReceived'), summary: '', timing: 0, status: 'completed', icon: MessageSquare },
+    { id: 'session_mode', label: t('probador.sessionMode'), summary: t('probador.evaluating'), timing: null, status: 'processing', icon: Shield },
+    { id: 'global_keywords', label: t('probador.globalKeywords'), summary: t('probador.searching'), timing: null, status: 'processing', icon: Zap },
+    { id: 'active_session', label: t('probador.activeSession'), summary: t('probador.verifying'), timing: null, status: 'processing', icon: RefreshCw },
+    { id: 'classification', label: t('probador.classification'), summary: t('probador.analyzing'), timing: null, status: 'processing', icon: Target },
+    { id: 'ai_fallback', label: t('probador.aiFallback'), summary: t('probador.processing'), timing: null, status: 'processing', icon: Brain }
   ]
 }
 
 export default function PipelineView({ trace, isLoading }) {
+  const { t } = useTranslation('learning')
   const [expandedSteps, setExpandedSteps] = useState(new Set())
 
   const toggleStep = (stepId) => {
@@ -284,14 +286,14 @@ export default function PipelineView({ trace, isLoading }) {
     })
   }
 
-  const steps = isLoading && !trace ? buildLoadingSteps() : buildSteps(trace)
+  const steps = isLoading && !trace ? buildLoadingSteps(t) : buildSteps(trace, t)
 
   if (!steps.length && !isLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center p-8">
         <Brain className="w-12 h-12 text-gray-200 mb-3" />
-        <p className="text-sm text-gray-400 font-medium">Envia un mensaje para ver el pipeline</p>
-        <p className="text-[10px] text-gray-300 mt-1">Cada paso del cerebro se mostrara aqui</p>
+        <p className="text-sm text-gray-400 font-medium">{t('probador.sendMessageToSeePipeline')}</p>
+        <p className="text-[10px] text-gray-300 mt-1">{t('probador.eachStepShownHere')}</p>
       </div>
     )
   }
@@ -302,14 +304,14 @@ export default function PipelineView({ trace, isLoading }) {
       {trace?.result?.totalPipelineMs && (
         <div className="mb-4 flex items-center gap-2 text-[10px]">
           <span className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded-full font-semibold">
-            Total: {trace.result.totalPipelineMs}ms
+            {t('probador.pipelineTotal', { ms: trace.result.totalPipelineMs })}
           </span>
           <span className="px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full">
             {trace.result.type}
           </span>
           {trace.result.responseSent && (
             <span className="px-2 py-0.5 bg-green-50 text-green-600 rounded-full">
-              {trace.result.responseTexts?.length || 0} respuesta(s)
+              {t('probador.responses', { count: trace.result.responseTexts?.length || 0 })}
             </span>
           )}
         </div>

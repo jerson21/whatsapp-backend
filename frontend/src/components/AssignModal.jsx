@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { X, UserPlus, Building2 } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
+import { useTranslation } from 'react-i18next'
 
 export default function AssignModal({ sessionId, currentAgentId, currentDepartmentId, onClose, onAssigned }) {
+  const { t } = useTranslation('conversations')
   const [agents, setAgents] = useState([])
   const [departments, setDepartments] = useState([])
   const [selectedAgentId, setSelectedAgentId] = useState(currentAgentId || '')
@@ -40,7 +42,7 @@ export default function AssignModal({ sessionId, currentAgentId, currentDepartme
         body: JSON.stringify(body)
       })
       const data = await res.json()
-      if (!data.ok) throw new Error(data.error || 'Error al asignar')
+      if (!data.ok) throw new Error(data.error || t('assignModal.errorAssigning'))
       onAssigned && onAssigned(data)
       onClose()
     } catch (err) {
@@ -50,10 +52,9 @@ export default function AssignModal({ sessionId, currentAgentId, currentDepartme
     }
   }
 
-  // Agrupar agentes por departamento
   const agentsByDept = {}
   agents.filter(a => a.status === 'active').forEach(a => {
-    const deptName = a.department_name || 'Sin departamento'
+    const deptName = a.department_name || t('common:noDepartment')
     if (!agentsByDept[deptName]) agentsByDept[deptName] = []
     agentsByDept[deptName].push(a)
   })
@@ -64,7 +65,7 @@ export default function AssignModal({ sessionId, currentAgentId, currentDepartme
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
             <UserPlus className="w-5 h-5 text-green-600" />
-            Asignar Conversación
+            {t('assignModal.title')}
           </h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X className="w-5 h-5" />
@@ -77,36 +78,34 @@ export default function AssignModal({ sessionId, currentAgentId, currentDepartme
           </div>
         )}
 
-        {/* Departamento */}
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-1">
             <Building2 className="w-4 h-4 inline mr-1" />
-            Departamento
+            {t('assignModal.department')}
           </label>
           <select
             value={selectedDeptId}
             onChange={e => setSelectedDeptId(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
           >
-            <option value="">Sin asignar departamento</option>
+            <option value="">{t('assignModal.noDepartment')}</option>
             {departments.filter(d => d.active).map(d => (
               <option key={d.id} value={d.id}>{d.display_name || d.name}</option>
             ))}
           </select>
         </div>
 
-        {/* Agente */}
         <div className="mb-6">
           <label className="block text-sm font-medium text-gray-700 mb-1">
             <UserPlus className="w-4 h-4 inline mr-1" />
-            Agente
+            {t('assignModal.agent')}
           </label>
           <select
             value={selectedAgentId}
             onChange={e => setSelectedAgentId(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
           >
-            <option value="">Sin asignar agente</option>
+            <option value="">{t('assignModal.noAgent')}</option>
             {Object.entries(agentsByDept).map(([deptName, deptAgents]) => (
               <optgroup key={deptName} label={deptName}>
                 {deptAgents.map(a => (
@@ -124,14 +123,14 @@ export default function AssignModal({ sessionId, currentAgentId, currentDepartme
             onClick={onClose}
             className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50 transition"
           >
-            Cancelar
+            {t('common:actions.cancel')}
           </button>
           <button
             onClick={handleAssign}
             disabled={loading || (!selectedAgentId && !selectedDeptId)}
             className="flex-1 px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Asignando...' : 'Asignar'}
+            {loading ? t('assignModal.assigning') : t('assign')}
           </button>
         </div>
       </div>

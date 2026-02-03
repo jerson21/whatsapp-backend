@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { fetchLeads, fetchLeadStats, updateLead, adjustLeadScore } from '../api/leads'
 import { formatDistanceToNow, format } from 'date-fns'
-import { es } from 'date-fns/locale'
+import { getDateLocale } from '../i18n/dateLocale'
 import {
   Users,
   Search,
@@ -19,18 +20,18 @@ import {
 } from 'lucide-react'
 
 const STATUS_CONFIG = {
-  new: { label: 'Nuevo', color: '#6b7280', bg: '#f3f4f6' },
-  engaged: { label: 'Interesado', color: '#3b82f6', bg: '#dbeafe' },
-  qualified: { label: 'Calificado', color: '#10b981', bg: '#d1fae5' },
-  customer: { label: 'Cliente', color: '#8b5cf6', bg: '#ede9fe' },
-  inactive: { label: 'Inactivo', color: '#9ca3af', bg: '#f9fafb' }
+  new: { labelKey: 'statusNew', color: '#6b7280', bg: '#f3f4f6' },
+  engaged: { labelKey: 'statusEngaged', color: '#3b82f6', bg: '#dbeafe' },
+  qualified: { labelKey: 'statusQualified', color: '#10b981', bg: '#d1fae5' },
+  customer: { labelKey: 'statusClient', color: '#8b5cf6', bg: '#ede9fe' },
+  inactive: { labelKey: 'statusInactive', color: '#9ca3af', bg: '#f9fafb' }
 }
 
 const SCORE_COLORS = {
-  hot: { color: '#ef4444', label: 'Caliente', range: '80-100' },
-  warm: { color: '#f59e0b', label: 'Tibio', range: '50-79' },
-  cold: { color: '#3b82f6', label: 'Frío', range: '20-49' },
-  new: { color: '#6b7280', label: 'Nuevo', range: '0-19' }
+  hot: { color: '#ef4444', labelKey: 'hot', range: '80-100' },
+  warm: { color: '#f59e0b', labelKey: 'warm', range: '50-79' },
+  cold: { color: '#3b82f6', labelKey: 'cold', range: '20-49' },
+  new: { color: '#6b7280', labelKey: 'new', range: '0-19' }
 }
 
 function getScoreCategory(score) {
@@ -42,6 +43,7 @@ function getScoreCategory(score) {
 
 export default function Leads() {
   const navigate = useNavigate()
+  const { t } = useTranslation('leads')
   const [leads, setLeads] = useState([])
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -113,15 +115,15 @@ export default function Leads() {
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Gestión de Leads</h1>
-          <p className="text-gray-500 mt-1">Administra y califica tus leads</p>
+          <h1 className="text-2xl font-bold text-gray-800">{t('title')}</h1>
+          <p className="text-gray-500 mt-1">{t('subtitle')}</p>
         </div>
         <button
           onClick={loadData}
           className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 transition"
         >
           <RefreshCw className="w-4 h-4" />
-          Actualizar
+          {t('common:actions.refresh')}
         </button>
       </div>
 
@@ -129,23 +131,23 @@ export default function Leads() {
       {stats && (
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
           <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-            <p className="text-sm text-gray-500">Total Leads</p>
+            <p className="text-sm text-gray-500">{t('totalLeads')}</p>
             <p className="text-2xl font-bold text-gray-800">{stats.stats?.total_leads || 0}</p>
           </div>
           <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-            <p className="text-sm text-gray-500">Score Promedio</p>
+            <p className="text-sm text-gray-500">{t('avgScore')}</p>
             <p className="text-2xl font-bold text-blue-600">{stats.stats?.avg_score || 0}</p>
           </div>
           <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-            <p className="text-sm text-gray-500">Nuevos</p>
+            <p className="text-sm text-gray-500">{t('newLeads')}</p>
             <p className="text-2xl font-bold text-gray-600">{stats.stats?.new_leads || 0}</p>
           </div>
           <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-            <p className="text-sm text-gray-500">Calificados</p>
+            <p className="text-sm text-gray-500">{t('qualified')}</p>
             <p className="text-2xl font-bold text-green-600">{stats.stats?.qualified_leads || 0}</p>
           </div>
           <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-            <p className="text-sm text-gray-500">Clientes</p>
+            <p className="text-sm text-gray-500">{t('clients')}</p>
             <p className="text-2xl font-bold text-purple-600">{stats.stats?.customers || 0}</p>
           </div>
         </div>
@@ -154,7 +156,7 @@ export default function Leads() {
       {/* Score Distribution */}
       {stats?.score_distribution && (
         <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm mb-6">
-          <p className="text-sm font-medium text-gray-700 mb-3">Distribución de Scores</p>
+          <p className="text-sm font-medium text-gray-700 mb-3">{t('scoreDistribution')}</p>
           <div className="flex gap-4">
             {Object.entries(SCORE_COLORS).map(([key, config]) => {
               const count = stats.score_distribution.find(d => d.category === key)?.count || 0
@@ -165,7 +167,7 @@ export default function Leads() {
                     style={{ background: config.color }}
                   />
                   <span className="text-sm text-gray-600">
-                    {config.label}: <strong>{count}</strong>
+                    {t(config.labelKey)}: <strong>{count}</strong>
                   </span>
                 </div>
               )
@@ -179,7 +181,7 @@ export default function Leads() {
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-gray-400" />
-            <span className="text-sm text-gray-600">Filtrar:</span>
+            <span className="text-sm text-gray-600">{t('filter')}</span>
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -187,7 +189,7 @@ export default function Leads() {
               type="text"
               value={filters.search}
               onChange={(e) => handleFilterChange('search', e.target.value)}
-              placeholder="Buscar..."
+              placeholder={t('searchPlaceholder')}
               className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none w-48"
             />
           </div>
@@ -196,9 +198,9 @@ export default function Leads() {
             onChange={(e) => handleFilterChange('status', e.target.value)}
             className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
           >
-            <option value="">Todos los estados</option>
+            <option value="">{t('allStatuses')}</option>
             {Object.entries(STATUS_CONFIG).map(([key, config]) => (
-              <option key={key} value={key}>{config.label}</option>
+              <option key={key} value={key}>{t(config.labelKey)}</option>
             ))}
           </select>
           <select
@@ -206,10 +208,10 @@ export default function Leads() {
             onChange={(e) => handleFilterChange('min_score', e.target.value)}
             className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
           >
-            <option value="">Todos los scores</option>
-            <option value="80">Score 80+ (Caliente)</option>
-            <option value="50">Score 50+ (Tibio)</option>
-            <option value="20">Score 20+ (Frío)</option>
+            <option value="">{t('allScores')}</option>
+            <option value="80">{t('scoreHot')}</option>
+            <option value="50">{t('scoreWarm')}</option>
+            <option value="20">{t('scoreCold')}</option>
           </select>
           <select
             value={`${filters.sort_by}-${filters.sort_dir}`}
@@ -220,16 +222,16 @@ export default function Leads() {
             }}
             className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
           >
-            <option value="current_score-desc">Mayor score</option>
-            <option value="current_score-asc">Menor score</option>
-            <option value="last_interaction-desc">Más reciente</option>
-            <option value="total_messages-desc">Más mensajes</option>
+            <option value="current_score-desc">{t('sortHighest')}</option>
+            <option value="current_score-asc">{t('sortLowest')}</option>
+            <option value="last_interaction-desc">{t('sortRecent')}</option>
+            <option value="total_messages-desc">{t('sortMostMessages')}</option>
           </select>
           <button
             onClick={applyFilters}
             className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm transition"
           >
-            Aplicar
+            {t('common:actions.apply')}
           </button>
         </div>
       </div>
@@ -239,19 +241,19 @@ export default function Leads() {
         {leads.length === 0 ? (
           <div className="p-12 text-center text-gray-400">
             <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p>No hay leads registrados</p>
-            <p className="text-sm mt-1">Los leads se crean automáticamente cuando interactúan</p>
+            <p>{t('noLeads')}</p>
+            <p className="text-sm mt-1">{t('leadsHint')}</p>
           </div>
         ) : (
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 text-left text-xs text-gray-500 uppercase tracking-wider">
-                <th className="px-4 py-3">Lead</th>
-                <th className="px-4 py-3">Score</th>
-                <th className="px-4 py-3">Estado</th>
-                <th className="px-4 py-3">Mensajes</th>
-                <th className="px-4 py-3">Última actividad</th>
-                <th className="px-4 py-3">Acciones</th>
+                <th className="px-4 py-3">{t('lead')}</th>
+                <th className="px-4 py-3">{t('score')}</th>
+                <th className="px-4 py-3">{t('status')}</th>
+                <th className="px-4 py-3">{t('messages')}</th>
+                <th className="px-4 py-3">{t('lastActivity')}</th>
+                <th className="px-4 py-3">{t('actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -271,7 +273,7 @@ export default function Leads() {
                         </div>
                         <div>
                           <div className="font-medium text-gray-800">
-                            {lead.contact_name || 'Sin nombre'}
+                            {lead.contact_name || t('noName')}
                           </div>
                           <div className="text-xs text-gray-400 flex items-center gap-1">
                             <Phone className="w-3 h-3" />
@@ -292,14 +294,14 @@ export default function Leads() {
                           <button
                             onClick={() => handleScoreAdjust(lead.phone, 5)}
                             className="p-1 hover:bg-green-100 rounded text-green-600"
-                            title="+5 puntos"
+                            title={t('addPoints')}
                           >
                             <Plus className="w-3 h-3" />
                           </button>
                           <button
                             onClick={() => handleScoreAdjust(lead.phone, -5)}
                             className="p-1 hover:bg-red-100 rounded text-red-600"
-                            title="-5 puntos"
+                            title={t('subPoints')}
                           >
                             <Minus className="w-3 h-3" />
                           </button>
@@ -314,7 +316,7 @@ export default function Leads() {
                         style={{ background: statusConfig.bg, color: statusConfig.color }}
                       >
                         {Object.entries(STATUS_CONFIG).map(([key, config]) => (
-                          <option key={key} value={key}>{config.label}</option>
+                          <option key={key} value={key}>{t(config.labelKey)}</option>
                         ))}
                       </select>
                     </td>
@@ -328,7 +330,7 @@ export default function Leads() {
                       {lead.last_interaction
                         ? formatDistanceToNow(new Date(lead.last_interaction), {
                             addSuffix: true,
-                            locale: es
+                            locale: getDateLocale()
                           })
                         : '-'}
                     </td>
@@ -336,7 +338,7 @@ export default function Leads() {
                       <button
                         onClick={() => navigate(`/conversations?phone=${encodeURIComponent(lead.phone)}`)}
                         className="p-2 hover:bg-gray-100 rounded-lg transition"
-                        title="Ver conversación"
+                        title={t('viewConversation')}
                       >
                         <ChevronRight className="w-4 h-4 text-gray-400" />
                       </button>

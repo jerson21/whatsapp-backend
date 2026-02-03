@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { login as apiLogin } from '../api/auth'
+import { useTranslation } from 'react-i18next'
+import { Languages } from 'lucide-react'
 
 export default function Login() {
   const [username, setUsername] = useState('')
@@ -11,6 +13,7 @@ export default function Login() {
 
   const navigate = useNavigate()
   const login = useAuthStore((state) => state.login)
+  const { t, i18n } = useTranslation('login')
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -22,14 +25,28 @@ export default function Login() {
       login(agent, token, basicToken)
       navigate('/dashboard')
     } catch (err) {
-      setError(err.message || 'Error al iniciar sesión')
+      setError(err.message || t('error'))
     } finally {
       setLoading(false)
     }
   }
 
+  const toggleLanguage = () => {
+    const newLang = i18n.language?.startsWith('es') ? 'en' : 'es'
+    i18n.changeLanguage(newLang)
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center p-5">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center p-5 relative">
+      {/* Language Toggle */}
+      <button
+        onClick={toggleLanguage}
+        className="absolute top-4 right-4 flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-white/80 rounded-lg transition"
+      >
+        <Languages className="w-4 h-4" />
+        <span>{i18n.language?.startsWith('es') ? 'EN' : 'ES'}</span>
+      </button>
+
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-10">
         {/* Logo */}
         <div className="text-center mb-8">
@@ -42,7 +59,7 @@ export default function Login() {
             Chat Platform
           </h1>
           <p className="text-gray-500 text-sm">
-            Ingresa tus credenciales para continuar
+            {t('subtitle')}
           </p>
         </div>
 
@@ -56,21 +73,21 @@ export default function Login() {
 
           <div className="mb-5">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Usuario
+              {t('username')}
             </label>
             <input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-base outline-none transition-colors focus:border-indigo-500"
-              placeholder="admin"
+              placeholder={t('usernamePlaceholder')}
               required
             />
           </div>
 
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Contraseña
+              {t('password')}
             </label>
             <input
               type="password"
@@ -87,12 +104,12 @@ export default function Login() {
             disabled={loading}
             className="w-full bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white font-semibold py-3.5 px-5 rounded-xl text-base transition-all shadow-lg shadow-indigo-500/30 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {loading ? 'Ingresando...' : 'Ingresar'}
+            {loading ? t('submitting') : t('submit')}
           </button>
         </form>
 
         <p className="text-center text-gray-400 text-xs mt-8">
-          Respaldos Chile © 2025
+          {t('footer')}
         </p>
       </div>
     </div>

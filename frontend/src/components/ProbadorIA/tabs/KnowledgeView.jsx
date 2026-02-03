@@ -1,6 +1,8 @@
+import { useTranslation } from 'react-i18next'
 import { BookOpen, DollarSign, Shield, AlertCircle, Check, Search } from 'lucide-react'
 
 export default function KnowledgeView({ trace, sessionCorrections }) {
+  const { t } = useTranslation('learning')
   const ai = trace?.aiFallback || {}
   const knowledge = ai.knowledge || {}
   const vectorResults = knowledge.vectorSearch?.results || []
@@ -21,7 +23,7 @@ export default function KnowledgeView({ trace, sessionCorrections }) {
         <div>
           <h4 className="text-[10px] font-semibold uppercase tracking-wider text-amber-600 mb-2 flex items-center gap-1">
             <AlertCircle className="w-3 h-3" />
-            Correcciones de esta sesion
+            {t('probador.sessionCorrections')}
           </h4>
           <div className="space-y-2">
             {sessionCorrections.map((correction, idx) => (
@@ -37,12 +39,12 @@ export default function KnowledgeView({ trace, sessionCorrections }) {
                   {correction.type === 'factual' ? (
                     <>
                       <Check className="w-3 h-3" />
-                      <span className="font-semibold">Respuesta corregida</span>
+                      <span className="font-semibold">{t('probador.correctedResponse')}</span>
                     </>
                   ) : (
                     <>
                       <Shield className="w-3 h-3" />
-                      <span className="font-semibold">Regla agregada</span>
+                      <span className="font-semibold">{t('probador.ruleAdded')}</span>
                     </>
                   )}
                 </div>
@@ -68,15 +70,15 @@ export default function KnowledgeView({ trace, sessionCorrections }) {
           <span className={`text-[9px] px-2 py-0.5 rounded-full font-medium ${
             knowledge.retrieverAvailable ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
           }`}>
-            Retriever: {knowledge.retrieverAvailable ? 'Disponible' : 'No disponible'}
+            {t('probador.retrieverLabel', { status: knowledge.retrieverAvailable ? t('probador.retrieverAvailable') : t('probador.retrieverUnavailable') })}
           </span>
           {knowledge.vectorSearch?.durationMs && (
             <span className="text-[9px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">
-              Busqueda: {knowledge.vectorSearch.durationMs}ms
+              {t('probador.searchDuration', { ms: knowledge.vectorSearch.durationMs })}
             </span>
           )}
           <span className="text-[9px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 font-medium">
-            {knowledge.combinedCount || 0} resultados combinados
+            {t('probador.combinedResults', { count: knowledge.combinedCount || 0 })}
           </span>
         </div>
       )}
@@ -86,18 +88,18 @@ export default function KnowledgeView({ trace, sessionCorrections }) {
         <div>
           <h4 className="text-[10px] font-semibold uppercase tracking-wider text-indigo-600 mb-2 flex items-center gap-1">
             <Search className="w-3 h-3" />
-            Busqueda vectorial ({vectorResults.length})
+            {t('probador.vectorSearch', { count: vectorResults.length })}
           </h4>
           <div className="space-y-2">
             {vectorResults.map((pair, idx) => (
               <div key={`v-${idx}`} className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm">
                 <div className="flex items-center gap-2 mb-1.5">
                   <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600">
-                    {pair.source === 'learned' ? 'Aprendido' : pair.source || 'Vector'}
+                    {pair.source === 'learned' ? t('probador.learned') : pair.source || 'Vector'}
                   </span>
                   {pair.similarityScore != null && (
                     <span className="text-[9px] font-mono text-gray-400">
-                      {Math.round((pair.similarityScore || 0) * 100)}% similitud
+                      {t('probador.similarity', { pct: Math.round((pair.similarityScore || 0) * 100) })}
                     </span>
                   )}
                   {pair.qualityScore != null && (
@@ -123,7 +125,7 @@ export default function KnowledgeView({ trace, sessionCorrections }) {
         <div>
           <h4 className="text-[10px] font-semibold uppercase tracking-wider text-teal-600 mb-2 flex items-center gap-1">
             <BookOpen className="w-3 h-3" />
-            Busqueda BM25 / FAQ ({bm25Results.length})
+            {t('probador.bm25Search', { count: bm25Results.length })}
           </h4>
           <div className="space-y-2">
             {bm25Results.map((pair, idx) => (
@@ -148,21 +150,21 @@ export default function KnowledgeView({ trace, sessionCorrections }) {
         <div>
           <h4 className="text-[10px] font-semibold uppercase tracking-wider text-green-600 mb-2 flex items-center gap-1">
             <DollarSign className="w-3 h-3" />
-            Precios encontrados ({prices.length})
+            {t('probador.pricesFound', { count: prices.length })}
           </h4>
           {priceQuery.extractedProduct && (
             <p className="text-[10px] text-gray-500 mb-2">
-              Producto detectado: <span className="font-medium text-gray-700">{priceQuery.extractedProduct}</span>
-              {priceQuery.extractedVariant && <> · Variante: <span className="font-medium text-gray-700">{priceQuery.extractedVariant}</span></>}
+              {t('probador.detectedProduct')} <span className="font-medium text-gray-700">{priceQuery.extractedProduct}</span>
+              {priceQuery.extractedVariant && <> · {t('probador.variant')} <span className="font-medium text-gray-700">{priceQuery.extractedVariant}</span></>}
             </p>
           )}
           <div className="bg-green-50 rounded-lg border border-green-200 overflow-hidden">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-green-200">
-                  <th className="text-left px-3 py-1.5 text-[9px] font-semibold text-green-700 uppercase">Producto</th>
-                  <th className="text-left px-3 py-1.5 text-[9px] font-semibold text-green-700 uppercase">Variante</th>
-                  <th className="text-right px-3 py-1.5 text-[9px] font-semibold text-green-700 uppercase">Precio</th>
+                  <th className="text-left px-3 py-1.5 text-[9px] font-semibold text-green-700 uppercase">{t('probador.thProduct')}</th>
+                  <th className="text-left px-3 py-1.5 text-[9px] font-semibold text-green-700 uppercase">{t('probador.thVariant')}</th>
+                  <th className="text-right px-3 py-1.5 text-[9px] font-semibold text-green-700 uppercase">{t('probador.thPrice')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-green-100">
@@ -175,7 +177,7 @@ export default function KnowledgeView({ trace, sessionCorrections }) {
                       {price.variant || '-'}
                     </td>
                     <td className="px-3 py-1.5 text-[11px] text-gray-700 font-mono text-right font-medium">
-                      ${Number(price.price || 0).toLocaleString('es-CL')}
+                      ${Number(price.price || 0).toLocaleString()}
                     </td>
                   </tr>
                 ))}
@@ -189,8 +191,10 @@ export default function KnowledgeView({ trace, sessionCorrections }) {
       {priceQuery.isPriceQuery && !hasPrices && (
         <div className="rounded-lg p-3 bg-yellow-50 border border-yellow-200 text-[11px] text-yellow-800">
           <DollarSign className="w-3.5 h-3.5 inline mr-1" />
-          Se detecto consulta de precio pero no se encontraron resultados
-          {priceQuery.extractedProduct && <> para "{priceQuery.extractedProduct}"</>}
+          {priceQuery.extractedProduct
+            ? t('probador.priceQueryNoResultsFor', { product: priceQuery.extractedProduct })
+            : t('probador.priceQueryNoResults')
+          }
         </div>
       )}
 
@@ -198,8 +202,8 @@ export default function KnowledgeView({ trace, sessionCorrections }) {
       {!hasPairs && !hasPrices && !hasCorrections && (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <BookOpen className="w-10 h-10 text-gray-300 mb-3" />
-          <p className="text-sm text-gray-400 font-medium">No se inyecto conocimiento en esta respuesta</p>
-          <p className="text-xs text-gray-300 mt-1">El bot puede haber respondido solo con el prompt base</p>
+          <p className="text-sm text-gray-400 font-medium">{t('probador.noKnowledgeInjected')}</p>
+          <p className="text-xs text-gray-300 mt-1">{t('probador.noKnowledgeHint')}</p>
         </div>
       )}
     </div>

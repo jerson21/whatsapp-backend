@@ -1,6 +1,8 @@
+import { useTranslation } from 'react-i18next'
 import { Clock, MessageSquare } from 'lucide-react'
 
 export default function HistoryView({ trace }) {
+  const { t } = useTranslation('learning')
   const ai = trace?.aiFallback || {}
   const history = ai.conversationHistory || {}
   const turns = history.turns || []
@@ -10,8 +12,8 @@ export default function HistoryView({ trace }) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-6 text-center">
         <Clock className="w-10 h-10 text-gray-300 mb-3" />
-        <p className="text-sm text-gray-400 font-medium">Sin historial de conversacion</p>
-        <p className="text-xs text-gray-300 mt-1">Este es el primer mensaje de la sesion</p>
+        <p className="text-sm text-gray-400 font-medium">{t('probador.noConversationHistory')}</p>
+        <p className="text-xs text-gray-300 mt-1">{t('probador.firstMessageOfSession')}</p>
       </div>
     )
   }
@@ -22,7 +24,7 @@ export default function HistoryView({ trace }) {
       <div className="flex items-center gap-2 mb-4">
         <MessageSquare className="w-4 h-4 text-purple-500" />
         <span className="text-xs text-gray-600 font-medium">
-          {turnsLoaded} turnos cargados como contexto
+          {t('probador.turnsLoadedAsContext', { count: turnsLoaded })}
         </span>
       </div>
 
@@ -52,7 +54,7 @@ export default function HistoryView({ trace }) {
                 <p className="text-[11px] whitespace-pre-wrap leading-relaxed">{text}</p>
                 {turn.timestamp && (
                   <span className="text-[8px] opacity-40 block mt-0.5">
-                    {new Date(turn.timestamp).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(turn.timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 )}
               </div>

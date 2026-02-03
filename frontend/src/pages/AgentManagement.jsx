@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../store/authStore'
 import { UserPlus, Edit, Trash2, Key, Eye, EyeOff, Shield, User } from 'lucide-react'
 
@@ -11,6 +12,7 @@ const getHeaders = () => {
 }
 
 export default function AgentManagement() {
+  const { t } = useTranslation('agents')
   const [agents, setAgents] = useState([])
   const [departments, setDepartments] = useState([])
   const [loading, setLoading] = useState(true)
@@ -102,7 +104,7 @@ export default function AgentManagement() {
   }
 
   const handleDelete = async (agent) => {
-    if (!confirm(`Desactivar agente "${agent.name}"?`)) return
+    if (!confirm(t('deleteConfirm', { name: agent.name }))) return
     try {
       await fetch(`/api/agents/${agent.id}`, { method: 'DELETE', headers: getHeaders() })
       loadData()
@@ -112,7 +114,7 @@ export default function AgentManagement() {
   }
 
   const handleRegenerateKey = async (agent) => {
-    if (!confirm(`Regenerar API key de "${agent.name}"? La anterior dejara de funcionar.`)) return
+    if (!confirm(t('regenerateKeyConfirm', { name: agent.name }))) return
     try {
       const res = await fetch(`/api/agents/${agent.id}/regenerate-api-key`, {
         method: 'POST', headers: getHeaders()
@@ -137,11 +139,11 @@ export default function AgentManagement() {
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Agentes</h1>
-          <p className="text-gray-500 text-sm mt-1">Gestiona los agentes del sistema</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
+          <p className="text-gray-500 text-sm mt-1">{t('subtitle')}</p>
         </div>
         <button onClick={openCreate} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg transition font-medium">
-          <UserPlus className="w-4 h-4" /> Nuevo Agente
+          <UserPlus className="w-4 h-4" /> {t('addAgent')}
         </button>
       </div>
 
@@ -149,13 +151,13 @@ export default function AgentManagement() {
         <table className="w-full">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Agente</th>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Rol</th>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Departamento</th>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Estado</th>
+              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">{t('agent')}</th>
+              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">{t('role')}</th>
+              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">{t('department')}</th>
+              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">{t('status')}</th>
               <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">API Key</th>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Ultimo Login</th>
-              <th className="text-right px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Acciones</th>
+              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">{t('lastLogin')}</th>
+              <th className="text-right px-6 py-3 text-xs font-semibold text-gray-500 uppercase">{t('actions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -177,7 +179,7 @@ export default function AgentManagement() {
                     agent.role === 'supervisor' ? 'bg-purple-50 text-purple-700' : 'bg-blue-50 text-blue-700'
                   }`}>
                     {agent.role === 'supervisor' ? <Shield className="w-3 h-3" /> : <User className="w-3 h-3" />}
-                    {agent.role === 'supervisor' ? 'Supervisor' : 'Agente'}
+                    {agent.role === 'supervisor' ? t('supervisor') : t('agent')}
                   </span>
                 </td>
                 <td className="px-6 py-4">
@@ -186,14 +188,14 @@ export default function AgentManagement() {
                       {agent.department_name}
                     </span>
                   ) : (
-                    <span className="text-xs text-gray-400">Sin asignar</span>
+                    <span className="text-xs text-gray-400">{t('noDepartment')}</span>
                   )}
                 </td>
                 <td className="px-6 py-4">
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                     agent.status === 'active' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'
                   }`}>
-                    {agent.status === 'active' ? 'Activo' : 'Inactivo'}
+                    {agent.status === 'active' ? t('active') : t('inactive')}
                   </span>
                 </td>
                 <td className="px-6 py-4">
@@ -210,19 +212,19 @@ export default function AgentManagement() {
                 </td>
                 <td className="px-6 py-4">
                   <span className="text-xs text-gray-400">
-                    {agent.last_login ? new Date(agent.last_login).toLocaleString('es-CL') : 'Nunca'}
+                    {agent.last_login ? new Date(agent.last_login).toLocaleString() : t('never')}
                   </span>
                 </td>
                 <td className="px-6 py-4 text-right">
                   <div className="flex items-center justify-end gap-1">
-                    <button onClick={() => openEdit(agent)} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="Editar">
+                    <button onClick={() => openEdit(agent)} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title={t('common:actions.edit')}>
                       <Edit className="w-4 h-4" />
                     </button>
-                    <button onClick={() => handleRegenerateKey(agent)} className="p-2 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg" title="Regenerar API Key">
+                    <button onClick={() => handleRegenerateKey(agent)} className="p-2 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg" title={t('regenerateKey')}>
                       <Key className="w-4 h-4" />
                     </button>
                     {agent.status === 'active' && (
-                      <button onClick={() => handleDelete(agent)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg" title="Desactivar">
+                      <button onClick={() => handleDelete(agent)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg" title={t('deactivate')}>
                         <Trash2 className="w-4 h-4" />
                       </button>
                     )}
@@ -231,7 +233,7 @@ export default function AgentManagement() {
               </tr>
             ))}
             {!agents.length && (
-              <tr><td colSpan="7" className="text-center py-12 text-gray-400">No hay agentes. Crea el primero.</td></tr>
+              <tr><td colSpan="7" className="text-center py-12 text-gray-400">{t('noAgents')}</td></tr>
             )}
           </tbody>
         </table>
@@ -242,7 +244,7 @@ export default function AgentManagement() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-md p-6">
             <h2 className="text-lg font-bold text-gray-900 mb-4">
-              {editingAgent ? 'Editar Agente' : 'Nuevo Agente'}
+              {editingAgent ? t('editAgent') : t('addAgent')}
             </h2>
 
             {error && <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm mb-4">{error}</div>}
@@ -250,7 +252,7 @@ export default function AgentManagement() {
             <form onSubmit={handleSave} className="space-y-4">
               {!editingAgent && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('username')}</label>
                   <input type="text" value={form.username} onChange={e => setForm({ ...form, username: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" required minLength={3} />
                 </div>
@@ -258,7 +260,7 @@ export default function AgentManagement() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {editingAgent ? 'Nueva Contrasena (dejar vacio para no cambiar)' : 'Contrasena'}
+                  {editingAgent ? t('passwordPlaceholder') : t('password')}
                 </label>
                 <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
@@ -266,32 +268,32 @@ export default function AgentManagement() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre completo</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('name')}</label>
                 <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" required />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email (opcional)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('email')}</label>
                 <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('role')}</label>
                   <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                    <option value="agent">Agente</option>
-                    <option value="supervisor">Supervisor</option>
+                    <option value="agent">{t('agent')}</option>
+                    <option value="supervisor">{t('supervisor')}</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Departamento</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('department')}</label>
                   <select value={form.departmentId} onChange={e => setForm({ ...form, departmentId: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                    <option value="">Sin asignar</option>
+                    <option value="">{t('noDepartment')}</option>
                     {departments.filter(d => d.active).map(d => (
                       <option key={d.id} value={d.id}>{d.display_name}</option>
                     ))}
@@ -300,7 +302,7 @@ export default function AgentManagement() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Color avatar</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('avatarColor')}</label>
                 <div className="flex gap-2">
                   {COLORS.map(c => (
                     <button key={c} type="button" onClick={() => setForm({ ...form, avatarColor: c })}
@@ -313,11 +315,11 @@ export default function AgentManagement() {
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setShowModal(false)}
                   className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">
-                  Cancelar
+                  {t('common:actions.cancel')}
                 </button>
                 <button type="submit" disabled={saving}
                   className="flex-1 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg transition disabled:opacity-50">
-                  {saving ? 'Guardando...' : (editingAgent ? 'Guardar' : 'Crear')}
+                  {saving ? t('saving') : (editingAgent ? t('common:actions.save') : t('common:actions.create'))}
                 </button>
               </div>
             </form>

@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Activity, Phone, Clock, CheckCircle, XCircle, User } from 'lucide-react'
 
 export default function FlowMonitor() {
+  const { t } = useTranslation('monitor')
   const [executions, setExecutions] = useState([])
   const [selectedExecution, setSelectedExecution] = useState(null)
   const [stats, setStats] = useState({ running: 0, connectedMonitors: 0 })
@@ -84,18 +86,18 @@ export default function FlowMonitor() {
       <header className="bg-white border-b px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">Monitor de Flujos</h1>
-            <p className="text-gray-500">Tiempo real</p>
+            <h1 className="text-2xl font-bold text-gray-800">{t('title')}</h1>
+            <p className="text-gray-500">{t('subtitle')}</p>
           </div>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
               <span className="text-sm text-gray-600">
-                {isConnected ? 'Conectado' : 'Desconectado'}
+                {isConnected ? t('connected') : t('disconnected')}
               </span>
             </div>
             <div className="text-sm text-gray-600">
-              {executions.filter(e => !e.status).length} ejecuciones activas
+              {t('activeExecutions', { count: executions.filter(e => !e.status).length })}
             </div>
           </div>
         </div>
@@ -106,12 +108,12 @@ export default function FlowMonitor() {
         {/* Panel Izquierdo: Ejecuciones */}
         <aside className="w-80 bg-white border-r overflow-y-auto">
           <div className="p-4 border-b">
-            <h2 className="font-semibold text-gray-700">Ejecuciones</h2>
+            <h2 className="font-semibold text-gray-700">{t('executions')}</h2>
           </div>
           <div className="divide-y">
             {executions.length === 0 ? (
               <div className="p-8 text-center text-gray-400">
-                Sin ejecuciones
+                {t('noExecutions')}
               </div>
             ) : (
               executions.map((exec) => (
@@ -160,44 +162,44 @@ export default function FlowMonitor() {
               {/* Panel Central: Flujo (simplificado en v1) */}
               <div className="flex-1 p-6 overflow-auto">
                 <div className="bg-white rounded-lg border p-6">
-                  <h3 className="font-semibold text-gray-700 mb-4">Ejecución del Flujo</h3>
+                  <h3 className="font-semibold text-gray-700 mb-4">{t('flowExecution')}</h3>
                   <div className="space-y-3">
                     <div>
-                      <span className="text-sm text-gray-500">Flujo:</span>
+                      <span className="text-sm text-gray-500">{t('flow')}</span>
                       <p className="font-medium">{selectedExecution.flowName}</p>
                     </div>
                     <div>
-                      <span className="text-sm text-gray-500">Teléfono:</span>
+                      <span className="text-sm text-gray-500">{t('phone')}</span>
                       <p className="font-mono text-sm">{selectedExecution.phone}</p>
                     </div>
                     <div>
-                      <span className="text-sm text-gray-500">Nodo Actual:</span>
+                      <span className="text-sm text-gray-500">{t('currentNode')}</span>
                       <p className="font-mono text-sm">{selectedExecution.currentNodeId || 'N/A'}</p>
                     </div>
                     <div>
-                      <span className="text-sm text-gray-500">Tipo de Nodo:</span>
+                      <span className="text-sm text-gray-500">{t('nodeType')}</span>
                       <p className="font-mono text-sm">{selectedExecution.currentNodeType || 'N/A'}</p>
                     </div>
                     <div>
-                      <span className="text-sm text-gray-500">Estado:</span>
+                      <span className="text-sm text-gray-500">{t('status')}</span>
                       <p className="font-medium">
-                        {selectedExecution.status === 'completed' && 'Completado ✓'}
-                        {selectedExecution.status === 'error' && 'Error ✗'}
-                        {selectedExecution.status === 'transferred' && 'Transferido →'}
-                        {!selectedExecution.status && 'En ejecución...'}
+                        {selectedExecution.status === 'completed' && t('statusCompleted')}
+                        {selectedExecution.status === 'error' && t('statusError')}
+                        {selectedExecution.status === 'transferred' && t('statusTransferred')}
+                        {!selectedExecution.status && t('statusRunning')}
                       </p>
                     </div>
                     <div>
-                      <span className="text-sm text-gray-500">Iniciado:</span>
+                      <span className="text-sm text-gray-500">{t('started')}</span>
                       <p className="text-sm">
-                        {selectedExecution.timestamp ? new Date(selectedExecution.timestamp).toLocaleString('es-CL') : 'N/A'}
+                        {selectedExecution.timestamp ? new Date(selectedExecution.timestamp).toLocaleString() : 'N/A'}
                       </p>
                     </div>
                     {selectedExecution.completedAt && (
                       <div>
-                        <span className="text-sm text-gray-500">Completado:</span>
+                        <span className="text-sm text-gray-500">{t('completedAt')}</span>
                         <p className="text-sm">
-                          {new Date(selectedExecution.completedAt).toLocaleString('es-CL')}
+                          {new Date(selectedExecution.completedAt).toLocaleString()}
                         </p>
                       </div>
                     )}
@@ -208,11 +210,11 @@ export default function FlowMonitor() {
               {/* Panel Derecho: Detalles */}
               <aside className="w-96 bg-white border-l overflow-y-auto">
                 <div className="p-4 border-b">
-                  <h2 className="font-semibold text-gray-700">Detalles</h2>
+                  <h2 className="font-semibold text-gray-700">{t('details')}</h2>
                 </div>
                 <div className="p-4 space-y-4">
                   <div>
-                    <h3 className="text-sm font-semibold text-gray-600 mb-2">Variables</h3>
+                    <h3 className="text-sm font-semibold text-gray-600 mb-2">{t('variables')}</h3>
                     <div className="bg-gray-50 rounded p-3 font-mono text-xs">
                       <pre className="whitespace-pre-wrap break-words">
                         {JSON.stringify(selectedExecution.variables || {}, null, 2)}
@@ -220,7 +222,7 @@ export default function FlowMonitor() {
                     </div>
                   </div>
                   <div>
-                    <h3 className="text-sm font-semibold text-gray-600 mb-2">Timeline</h3>
+                    <h3 className="text-sm font-semibold text-gray-600 mb-2">{t('timeline')}</h3>
                     <div className="space-y-2">
                       {selectedExecution.steps && selectedExecution.steps.length > 0 ? (
                         selectedExecution.steps.map((step, i) => (
@@ -231,14 +233,14 @@ export default function FlowMonitor() {
                               <p className="text-gray-500">{step.nodeType} • {step.durationMs}ms</p>
                               {step.timestamp && (
                                 <p className="text-gray-400">
-                                  {new Date(step.timestamp).toLocaleTimeString('es-CL')}
+                                  {new Date(step.timestamp).toLocaleTimeString()}
                                 </p>
                               )}
                             </div>
                           </div>
                         ))
                       ) : (
-                        <p className="text-gray-400 text-sm">Sin eventos aún</p>
+                        <p className="text-gray-400 text-sm">{t('noEventsYet')}</p>
                       )}
                     </div>
                   </div>
@@ -249,7 +251,7 @@ export default function FlowMonitor() {
             <div className="flex-1 flex items-center justify-center text-gray-400">
               <div className="text-center">
                 <Activity className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                <p>Selecciona una ejecución para ver detalles</p>
+                <p>{t('selectExecution')}</p>
               </div>
             </div>
           )}

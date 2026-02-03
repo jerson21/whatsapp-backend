@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import {
   fetchAnalyticsSummary,
   fetchTimeline,
@@ -8,7 +9,6 @@ import {
   fetchTriggerTypes
 } from '../api/analytics'
 import { format } from 'date-fns'
-import { es } from 'date-fns/locale'
 import {
   BarChart3,
   TrendingUp,
@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 
 export default function Analytics() {
+  const { t } = useTranslation('analytics')
   const [summary, setSummary] = useState(null)
   const [timeline, setTimeline] = useState([])
   const [byFlow, setByFlow] = useState([])
@@ -74,8 +75,8 @@ export default function Analytics() {
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Analytics de Flujos</h1>
-          <p className="text-gray-500 mt-1">Métricas y análisis de rendimiento</p>
+          <h1 className="text-2xl font-bold text-gray-800">{t('title')}</h1>
+          <p className="text-gray-500 mt-1">{t('subtitle')}</p>
         </div>
         <div className="flex items-center gap-3">
           <select
@@ -83,16 +84,16 @@ export default function Analytics() {
             onChange={(e) => setDays(parseInt(e.target.value))}
             className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
           >
-            <option value={7}>Últimos 7 días</option>
-            <option value={14}>Últimos 14 días</option>
-            <option value={30}>Últimos 30 días</option>
+            <option value={7}>{t('lastDays', { count: 7 })}</option>
+            <option value={14}>{t('lastDays', { count: 14 })}</option>
+            <option value={30}>{t('lastDays', { count: 30 })}</option>
           </select>
           <button
             onClick={loadData}
             className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 transition"
           >
             <RefreshCw className="w-4 h-4" />
-            Actualizar
+            {t('refresh')}
           </button>
         </div>
       </div>
@@ -103,9 +104,9 @@ export default function Analytics() {
           <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Total Ejecuciones</p>
+                <p className="text-sm text-gray-500">{t('totalExecutions')}</p>
                 <p className="text-3xl font-bold text-gray-800 mt-1">{summary.executions.total}</p>
-                <p className="text-xs text-gray-400 mt-1">{summary.executions.unique_users} usuarios únicos</p>
+                <p className="text-xs text-gray-400 mt-1">{t('uniqueUsers', { count: summary.executions.unique_users })}</p>
               </div>
               <div className="p-3 bg-blue-50 rounded-xl">
                 <Activity className="w-6 h-6 text-blue-600" />
@@ -116,9 +117,9 @@ export default function Analytics() {
           <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Tasa de Completado</p>
+                <p className="text-sm text-gray-500">{t('completionRate')}</p>
                 <p className="text-3xl font-bold text-green-600 mt-1">{summary.executions.completion_rate}%</p>
-                <p className="text-xs text-gray-400 mt-1">{summary.executions.completed} completados</p>
+                <p className="text-xs text-gray-400 mt-1">{t('completedCount', { count: summary.executions.completed })}</p>
               </div>
               <div className="p-3 bg-green-50 rounded-xl">
                 <CheckCircle className="w-6 h-6 text-green-600" />
@@ -129,9 +130,9 @@ export default function Analytics() {
           <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Fallidos</p>
+                <p className="text-sm text-gray-500">{t('failed')}</p>
                 <p className="text-3xl font-bold text-red-500 mt-1">{summary.executions.failed}</p>
-                <p className="text-xs text-gray-400 mt-1">{summary.executions.transferred} transferidos</p>
+                <p className="text-xs text-gray-400 mt-1">{t('transferredCount', { count: summary.executions.transferred })}</p>
               </div>
               <div className="p-3 bg-red-50 rounded-xl">
                 <XCircle className="w-6 h-6 text-red-500" />
@@ -142,9 +143,9 @@ export default function Analytics() {
           <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Tiempo Promedio</p>
+                <p className="text-sm text-gray-500">{t('avgTime')}</p>
                 <p className="text-3xl font-bold text-purple-600 mt-1">{summary.executions.avg_duration_ms}ms</p>
-                <p className="text-xs text-gray-400 mt-1">{summary.executions.avg_nodes} nodos promedio</p>
+                <p className="text-xs text-gray-400 mt-1">{t('avgNodes', { count: summary.executions.avg_nodes })}</p>
               </div>
               <div className="p-3 bg-purple-50 rounded-xl">
                 <Clock className="w-6 h-6 text-purple-600" />
@@ -158,12 +159,12 @@ export default function Analytics() {
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 mb-6">
         <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
           <TrendingUp className="w-5 h-5 text-gray-400" />
-          Ejecuciones por día
+          {t('executionsPerDay')}
         </h3>
 
         {timeline.length === 0 ? (
           <div className="text-center text-gray-400 py-8">
-            No hay datos para mostrar
+            {t('noDataToShow')}
           </div>
         ) : (
           <div className="flex items-end gap-2 h-40">
@@ -173,17 +174,17 @@ export default function Analytics() {
                   <div
                     className="w-full bg-green-500 rounded-t"
                     style={{ height: `${(day.completed / maxTimelineValue) * 100}%` }}
-                    title={`Completados: ${day.completed}`}
+                    title={t('tooltipCompleted', { count: day.completed })}
                   />
                   <div
                     className="w-full bg-red-400"
                     style={{ height: `${(day.failed / maxTimelineValue) * 100}%` }}
-                    title={`Fallidos: ${day.failed}`}
+                    title={t('tooltipFailed', { count: day.failed })}
                   />
                   <div
                     className="w-full bg-yellow-400 rounded-b"
                     style={{ height: `${(day.transferred / maxTimelineValue) * 100}%` }}
-                    title={`Transferidos: ${day.transferred}`}
+                    title={t('tooltipTransferred', { count: day.transferred })}
                   />
                 </div>
                 <div className="text-xs text-gray-400 mt-2">
@@ -197,15 +198,15 @@ export default function Analytics() {
         <div className="flex items-center gap-4 mt-4 pt-4 border-t border-gray-100">
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded bg-green-500" />
-            <span className="text-xs text-gray-500">Completados</span>
+            <span className="text-xs text-gray-500">{t('completed')}</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded bg-red-400" />
-            <span className="text-xs text-gray-500">Fallidos</span>
+            <span className="text-xs text-gray-500">{t('failed')}</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded bg-yellow-400" />
-            <span className="text-xs text-gray-500">Transferidos</span>
+            <span className="text-xs text-gray-500">{t('transferred')}</span>
           </div>
         </div>
       </div>
@@ -215,12 +216,12 @@ export default function Analytics() {
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
           <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
             <GitBranch className="w-5 h-5 text-gray-400" />
-            Rendimiento por Flujo
+            {t('performanceByFlow')}
           </h3>
 
           {byFlow.length === 0 ? (
             <div className="text-center text-gray-400 py-8">
-              No hay flujos configurados
+              {t('noFlowsConfigured')}
             </div>
           ) : (
             <div className="space-y-3">
@@ -232,7 +233,7 @@ export default function Analytics() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                       <p className="font-medium text-gray-800 truncate">{flow.flow_name}</p>
-                      <span className="text-sm text-gray-500">{flow.recent_executions} ejecuciones</span>
+                      <span className="text-sm text-gray-500">{flow.recent_executions} {t('executions')}</span>
                     </div>
                     <div className="flex items-center gap-3 mt-1">
                       <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
@@ -253,7 +254,7 @@ export default function Analytics() {
             to="/flows"
             className="block text-center text-sm text-green-600 hover:text-green-700 mt-4 pt-4 border-t border-gray-100"
           >
-            Ver todos los flujos
+            {t('viewAllFlows')}
           </Link>
         </div>
 
@@ -261,7 +262,7 @@ export default function Analytics() {
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
           <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
             <Clock className="w-5 h-5 text-gray-400" />
-            Actividad por Hora
+            {t('activityByHour')}
           </h3>
 
           <div className="flex items-end gap-1 h-32">
@@ -273,7 +274,7 @@ export default function Analytics() {
                   height: `${(hour.executions / maxHourValue) * 100}%`,
                   minHeight: hour.executions > 0 ? '4px' : '0'
                 }}
-                title={`${hour.hour}:00 - ${hour.executions} ejecuciones`}
+                title={t('tooltipHourExecutions', { hour: hour.hour, count: hour.executions })}
               />
             ))}
           </div>
@@ -291,12 +292,12 @@ export default function Analytics() {
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
         <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
           <BarChart3 className="w-5 h-5 text-gray-400" />
-          Distribución por Tipo de Trigger
+          {t('triggerDistribution')}
         </h3>
 
         {triggerTypes.length === 0 ? (
           <div className="text-center text-gray-400 py-8">
-            No hay datos de triggers
+            {t('noTriggerData')}
           </div>
         ) : (
           <div className="flex gap-6">
@@ -315,7 +316,7 @@ export default function Analytics() {
                     <span className="text-xl font-bold" style={{ color }}>{percentage}%</span>
                   </div>
                   <p className="text-sm font-medium text-gray-800 capitalize">{trigger.trigger_type}</p>
-                  <p className="text-xs text-gray-400">{trigger.count} ejecuciones</p>
+                  <p className="text-xs text-gray-400">{trigger.count} {t('executions')}</p>
                 </div>
               )
             })}

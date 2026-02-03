@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useFlowStore } from '../store/flowStore'
 import { createFlow, updateFlow, activateFlow, fetchFlows, fetchFlow } from '../api/flows'
 
 export default function Toolbar({ onTestClick }) {
+  const { t } = useTranslation('flowBuilder')
   const {
     flowId,
     flowName,
@@ -33,9 +35,9 @@ export default function Toolbar({ onTestClick }) {
         setFlowMeta({ id: result.id, name: flowNameInput, slug: result.slug, is_active: false })
       }
       markSaved()
-      alert('Flujo guardado correctamente')
+      alert(t('toolbar.flowSaved'))
     } catch (err) {
-      alert('Error al guardar: ' + err.message)
+      alert(t('toolbar.errorSaving') + ': ' + err.message)
     } finally {
       setSaving(false)
     }
@@ -43,15 +45,15 @@ export default function Toolbar({ onTestClick }) {
 
   const handleToggleActive = async () => {
     if (!flowId) {
-      alert('Primero guarda el flujo')
+      alert(t('toolbar.saveFirst'))
       return
     }
     try {
       await activateFlow(flowId, !isActive)
       setFlowMeta({ id: flowId, name: flowNameInput, is_active: !isActive })
-      alert(isActive ? 'Flujo desactivado' : 'Flujo activado')
+      alert(isActive ? t('toolbar.flowDeactivated') : t('toolbar.flowActivated'))
     } catch (err) {
-      alert('Error: ' + err.message)
+      alert(t('toolbar.error') + ' ' + err.message)
     }
   }
 
@@ -61,7 +63,7 @@ export default function Toolbar({ onTestClick }) {
       setFlows(result.flows || [])
       setShowFlowList(true)
     } catch (err) {
-      alert('Error cargando flujos: ' + err.message)
+      alert(t('toolbar.errorLoadingFlows') + ': ' + err.message)
     }
   }
 
@@ -72,16 +74,16 @@ export default function Toolbar({ onTestClick }) {
       setFlowNameInput(result.flow.name)
       setShowFlowList(false)
     } catch (err) {
-      alert('Error cargando flujo: ' + err.message)
+      alert(t('toolbar.errorLoadingFlows') + ': ' + err.message)
     }
   }
 
   const handleNew = () => {
-    if (!isSaved && !confirm('Tienes cambios sin guardar. ¿Continuar?')) {
+    if (!isSaved && !confirm(t('toolbar.unsavedConfirm'))) {
       return
     }
     resetFlow()
-    setFlowNameInput('Nuevo Flujo')
+    setFlowNameInput(t('store.newFlow'))
   }
 
   return (
@@ -98,7 +100,7 @@ export default function Toolbar({ onTestClick }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '24px' }}>🤖</span>
-          <span style={{ fontWeight: 600, color: '#075E54' }}>Flow Builder</span>
+          <span style={{ fontWeight: 600, color: '#075E54' }}>{t('title')}</span>
         </div>
 
         <div style={{ borderLeft: '1px solid #e5e7eb', height: '24px' }} />
@@ -114,7 +116,7 @@ export default function Toolbar({ onTestClick }) {
             background: 'transparent',
             width: '200px'
           }}
-          placeholder="Nombre del flujo"
+          placeholder={t('toolbar.flowName')}
         />
 
         {!isSaved && (
@@ -125,7 +127,7 @@ export default function Toolbar({ onTestClick }) {
             padding: '2px 8px',
             borderRadius: '4px'
           }}>
-            Sin guardar
+            {t('toolbar.unsaved')}
           </span>
         )}
 
@@ -137,7 +139,7 @@ export default function Toolbar({ onTestClick }) {
             padding: '2px 8px',
             borderRadius: '4px'
           }}>
-            Activo
+            {t('toolbar.active')}
           </span>
         )}
       </div>
@@ -157,7 +159,7 @@ export default function Toolbar({ onTestClick }) {
             fontWeight: 500
           }}
         >
-          🧪 Probar
+          🧪 {t('toolbar.test')}
         </button>
 
         <div style={{ borderLeft: '1px solid #e5e7eb', height: '24px', margin: '0 4px' }} />
@@ -173,7 +175,7 @@ export default function Toolbar({ onTestClick }) {
             fontSize: '13px'
           }}
         >
-          + Nuevo
+          {t('toolbar.new')}
         </button>
 
         <button
@@ -187,7 +189,7 @@ export default function Toolbar({ onTestClick }) {
             fontSize: '13px'
           }}
         >
-          📂 Abrir
+          📂 {t('toolbar.open')}
         </button>
 
         <button
@@ -204,7 +206,7 @@ export default function Toolbar({ onTestClick }) {
             fontWeight: 500
           }}
         >
-          {saving ? 'Guardando...' : '💾 Guardar'}
+          {saving ? t('toolbar.saving') : `💾 ${t('toolbar.save')}`}
         </button>
 
         {flowId && (
@@ -221,7 +223,7 @@ export default function Toolbar({ onTestClick }) {
               fontWeight: 500
             }}
           >
-            {isActive ? '⏸️ Desactivar' : '▶️ Activar'}
+            {isActive ? `⏸️ ${t('toolbar.deactivate')}` : `▶️ ${t('toolbar.activate')}`}
           </button>
         )}
       </div>
@@ -249,12 +251,12 @@ export default function Toolbar({ onTestClick }) {
             overflow: 'auto'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0 }}>Seleccionar flujo</h3>
+              <h3 style={{ margin: 0 }}>{t('toolbar.selectFlow')}</h3>
               <button onClick={() => setShowFlowList(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px' }}>✕</button>
             </div>
 
             {flows.length === 0 ? (
-              <p style={{ color: '#6b7280', textAlign: 'center' }}>No hay flujos guardados</p>
+              <p style={{ color: '#6b7280', textAlign: 'center' }}>{t('toolbar.noFlowsSaved')}</p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {flows.map(flow => (
@@ -285,7 +287,7 @@ export default function Toolbar({ onTestClick }) {
                         padding: '2px 6px',
                         borderRadius: '4px'
                       }}>
-                        Activo
+                        {t('toolbar.active')}
                       </span>
                     )}
                   </div>

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { fetchLogs, fetchLogDetail, fetchLogStats } from '../api/logs'
 import { formatDistanceToNow, format } from 'date-fns'
-import { es } from 'date-fns/locale'
+import { getDateLocale } from '../i18n/dateLocale'
 import {
   Activity,
   CheckCircle,
@@ -16,15 +17,17 @@ import {
   X
 } from 'lucide-react'
 
-const STATUS_CONFIG = {
-  completed: { label: 'Completado', color: '#10b981', icon: CheckCircle },
-  failed: { label: 'Fallido', color: '#ef4444', icon: XCircle },
-  transferred: { label: 'Transferido', color: '#f59e0b', icon: ArrowRightLeft },
-  running: { label: 'En progreso', color: '#3b82f6', icon: Activity },
-  timeout: { label: 'Timeout', color: '#6b7280', icon: Clock }
-}
-
 export default function FlowLogs() {
+  const { t } = useTranslation('logs')
+
+  const STATUS_CONFIG = {
+    completed: { label: t('statusCompleted'), color: '#10b981', icon: CheckCircle },
+    failed: { label: t('statusFailed'), color: '#ef4444', icon: XCircle },
+    transferred: { label: t('statusTransferred'), color: '#f59e0b', icon: ArrowRightLeft },
+    running: { label: t('statusInProgress'), color: '#3b82f6', icon: Activity },
+    timeout: { label: t('statusTimeout'), color: '#6b7280', icon: Clock }
+  }
+
   const [logs, setLogs] = useState([])
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -89,15 +92,15 @@ export default function FlowLogs() {
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Logs de Ejecución</h1>
-          <p className="text-gray-500 mt-1">Historial de ejecución de flujos</p>
+          <h1 className="text-2xl font-bold text-gray-800">{t('title')}</h1>
+          <p className="text-gray-500 mt-1">{t('subtitle')}</p>
         </div>
         <button
           onClick={loadData}
           className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 transition"
         >
           <RefreshCw className="w-4 h-4" />
-          Actualizar
+          {t('refresh')}
         </button>
       </div>
 
@@ -105,26 +108,26 @@ export default function FlowLogs() {
       {stats && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-            <p className="text-sm text-gray-500">Total ejecuciones</p>
+            <p className="text-sm text-gray-500">{t('totalExecutions')}</p>
             <p className="text-2xl font-bold text-gray-800">{stats.total_executions || 0}</p>
-            <p className="text-xs text-gray-400 mt-1">Últimos 7 días</p>
+            <p className="text-xs text-gray-400 mt-1">{t('last7Days')}</p>
           </div>
           <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-            <p className="text-sm text-gray-500">Tasa de completado</p>
+            <p className="text-sm text-gray-500">{t('completionRate')}</p>
             <p className="text-2xl font-bold text-green-600">{stats.completion_rate || 0}%</p>
-            <p className="text-xs text-gray-400 mt-1">{stats.completed || 0} completados</p>
+            <p className="text-xs text-gray-400 mt-1">{t('completedCount', { count: stats.completed || 0 })}</p>
           </div>
           <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-            <p className="text-sm text-gray-500">Fallidos</p>
+            <p className="text-sm text-gray-500">{t('failed')}</p>
             <p className="text-2xl font-bold text-red-500">{stats.failed || 0}</p>
-            <p className="text-xs text-gray-400 mt-1">Requieren atención</p>
+            <p className="text-xs text-gray-400 mt-1">{t('needAttention')}</p>
           </div>
           <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-            <p className="text-sm text-gray-500">Tiempo promedio</p>
+            <p className="text-sm text-gray-500">{t('avgTime')}</p>
             <p className="text-2xl font-bold text-blue-600">
               {stats.avg_duration_ms ? `${Math.round(stats.avg_duration_ms)}ms` : '-'}
             </p>
-            <p className="text-xs text-gray-400 mt-1">Por ejecución</p>
+            <p className="text-xs text-gray-400 mt-1">{t('perExecution')}</p>
           </div>
         </div>
       )}
@@ -134,31 +137,31 @@ export default function FlowLogs() {
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-gray-400" />
-            <span className="text-sm text-gray-600">Filtrar:</span>
+            <span className="text-sm text-gray-600">{t('filter')}</span>
           </div>
           <select
             value={filters.status}
             onChange={(e) => handleFilterChange('status', e.target.value)}
             className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
           >
-            <option value="">Todos los estados</option>
-            <option value="completed">Completados</option>
-            <option value="failed">Fallidos</option>
-            <option value="transferred">Transferidos</option>
-            <option value="running">En progreso</option>
+            <option value="">{t('allStatuses')}</option>
+            <option value="completed">{t('completed')}</option>
+            <option value="failed">{t('failedPlural')}</option>
+            <option value="transferred">{t('transferredPlural')}</option>
+            <option value="running">{t('inProgress')}</option>
           </select>
           <input
             type="text"
             value={filters.phone}
             onChange={(e) => handleFilterChange('phone', e.target.value)}
-            placeholder="Teléfono..."
+            placeholder={t('phonePlaceholder')}
             className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none w-40"
           />
           <button
             onClick={applyFilters}
             className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm transition"
           >
-            Aplicar
+            {t('apply')}
           </button>
         </div>
       </div>
@@ -168,19 +171,19 @@ export default function FlowLogs() {
         {logs.length === 0 ? (
           <div className="p-12 text-center text-gray-400">
             <Activity className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p>No hay logs de ejecución</p>
-            <p className="text-sm mt-1">Los logs aparecerán cuando se ejecuten flujos</p>
+            <p>{t('noLogs')}</p>
+            <p className="text-sm mt-1">{t('logsWillAppear')}</p>
           </div>
         ) : (
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 text-left text-xs text-gray-500 uppercase tracking-wider">
-                <th className="px-4 py-3">Fecha</th>
-                <th className="px-4 py-3">Flujo</th>
-                <th className="px-4 py-3">Teléfono</th>
-                <th className="px-4 py-3">Estado</th>
-                <th className="px-4 py-3">Nodos</th>
-                <th className="px-4 py-3">Duración</th>
+                <th className="px-4 py-3">{t('thDate')}</th>
+                <th className="px-4 py-3">{t('thFlow')}</th>
+                <th className="px-4 py-3">{t('thPhone')}</th>
+                <th className="px-4 py-3">{t('thStatus')}</th>
+                <th className="px-4 py-3">{t('thNodes')}</th>
+                <th className="px-4 py-3">{t('thDuration')}</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
@@ -198,12 +201,12 @@ export default function FlowLogs() {
                       <div className="text-xs text-gray-400">
                         {formatDistanceToNow(new Date(log.started_at), {
                           addSuffix: true,
-                          locale: es
+                          locale: getDateLocale()
                         })}
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="font-medium text-gray-800">{log.flow_name || 'Sin nombre'}</div>
+                      <div className="font-medium text-gray-800">{log.flow_name || t('noName')}</div>
                       <div className="text-xs text-gray-400">{log.trigger_type}</div>
                     </td>
                     <td className="px-4 py-3">
@@ -231,7 +234,7 @@ export default function FlowLogs() {
                       <button
                         onClick={() => handleViewDetail(log)}
                         className="p-2 hover:bg-gray-100 rounded-lg transition"
-                        title="Ver detalle"
+                        title={t('viewDetail')}
                       >
                         <ChevronRight className="w-4 h-4 text-gray-400" />
                       </button>
@@ -255,7 +258,7 @@ export default function FlowLogs() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
-              <h3 className="font-semibold text-gray-800">Detalle de Ejecución</h3>
+              <h3 className="font-semibold text-gray-800">{t('executionDetail')}</h3>
               <button
                 onClick={() => setSelectedLog(null)}
                 className="p-2 hover:bg-gray-100 rounded-lg"
@@ -273,19 +276,19 @@ export default function FlowLogs() {
                 {/* Info básica */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-xs text-gray-400 mb-1">Flujo</p>
+                    <p className="text-xs text-gray-400 mb-1">{t('detailFlow')}</p>
                     <p className="font-medium">{selectedLog.flow_name}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400 mb-1">Teléfono</p>
+                    <p className="text-xs text-gray-400 mb-1">{t('detailPhone')}</p>
                     <p className="font-medium">{selectedLog.phone}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400 mb-1">Mensaje trigger</p>
+                    <p className="text-xs text-gray-400 mb-1">{t('triggerMessage')}</p>
                     <p className="text-sm bg-gray-100 p-2 rounded">{selectedLog.trigger_message || '-'}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400 mb-1">Estado final</p>
+                    <p className="text-xs text-gray-400 mb-1">{t('finalStatus')}</p>
                     <span
                       className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium"
                       style={{
@@ -301,7 +304,7 @@ export default function FlowLogs() {
                 {/* Variables */}
                 {selectedLog.variables && Object.keys(selectedLog.variables).length > 0 && (
                   <div>
-                    <p className="text-xs text-gray-400 mb-2">Variables capturadas</p>
+                    <p className="text-xs text-gray-400 mb-2">{t('capturedVariables')}</p>
                     <div className="bg-gray-50 rounded-lg p-3 space-y-1">
                       {Object.entries(selectedLog.variables).map(([key, value]) => (
                         <div key={key} className="flex items-center gap-2 text-sm">
@@ -316,7 +319,7 @@ export default function FlowLogs() {
                 {/* Steps */}
                 {selectedLog.steps && selectedLog.steps.length > 0 && (
                   <div>
-                    <p className="text-xs text-gray-400 mb-2">Nodos ejecutados</p>
+                    <p className="text-xs text-gray-400 mb-2">{t('executedNodes')}</p>
                     <div className="space-y-2">
                       {selectedLog.steps.map((step, idx) => (
                         <div
@@ -350,7 +353,7 @@ export default function FlowLogs() {
                     <p className="text-xs text-red-600 font-medium mb-1">Error</p>
                     <p className="text-sm text-red-700">{selectedLog.error_message}</p>
                     {selectedLog.error_node_id && (
-                      <p className="text-xs text-red-500 mt-1">En nodo: {selectedLog.error_node_id}</p>
+                      <p className="text-xs text-red-500 mt-1">{t('errorInNode', { nodeId: selectedLog.error_node_id })}</p>
                     )}
                   </div>
                 )}

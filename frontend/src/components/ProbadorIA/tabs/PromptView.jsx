@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { FileText, Sparkles, Code, Info } from 'lucide-react'
 
 function PromptSection({ label, labelColor, bgColor, textColor, content }) {
@@ -15,11 +16,13 @@ function PromptSection({ label, labelColor, bgColor, textColor, content }) {
 }
 
 export default function PromptView({ trace }) {
+  const { t } = useTranslation('learning')
+
   if (!trace) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-6">
         <Code className="w-10 h-10 text-gray-300 mb-3" />
-        <p className="text-sm text-gray-400">Sin datos de prompt</p>
+        <p className="text-sm text-gray-400">{t('probador.noPromptData')}</p>
       </div>
     )
   }
@@ -63,37 +66,37 @@ export default function PromptView({ trace }) {
       <div className="flex flex-wrap gap-1.5 mb-4">
         {prompt.isCustomSystemPrompt && (
           <span className="text-[9px] px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 font-medium">
-            Prompt personalizado
+            {t('probador.customPrompt')}
           </span>
         )}
         {prompt.knowledgeInjected && (
           <span className="text-[9px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
-            +{prompt.knowledgePairsInjected} pares Q&A
+            {t('probador.qaPairsCount', { count: prompt.knowledgePairsInjected })}
           </span>
         )}
         {prompt.pricesInjected && (
           <span className="text-[9px] px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">
-            +precios
+            {t('probador.plusPrices')}
           </span>
         )}
         {prompt.behavioralRulesInjected && (
           <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-medium">
-            +{prompt.behavioralRulesCount} reglas
+            {t('probador.rulesCount', { count: prompt.behavioralRulesCount })}
           </span>
         )}
         {prompt.hasCustomInstructions && (
           <span className="text-[9px] px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 font-medium">
-            +instrucciones admin
+            {t('probador.plusAdminInstructions')}
           </span>
         )}
         <span className="text-[9px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">
-          Fidelidad: {prompt.fidelityLevel || '?'}
+          {t('probador.fidelityLevel', { level: prompt.fidelityLevel || '?' })}
         </span>
       </div>
 
       {/* Full System Prompt */}
       <PromptSection
-        label="System Prompt Completo"
+        label={t('probador.fullSystemPrompt')}
         labelColor="text-gray-400"
         bgColor="bg-gray-900"
         textColor="text-gray-100"
@@ -103,7 +106,7 @@ export default function PromptView({ trace }) {
       {/* Behavioral Rules (standalone section for visibility) */}
       {behavioralRulesText && (
         <PromptSection
-          label="Reglas de Comportamiento"
+          label={t('probador.behavioralRules')}
           labelColor="text-purple-400"
           bgColor="bg-purple-950"
           textColor="text-purple-100"
@@ -114,7 +117,7 @@ export default function PromptView({ trace }) {
       {/* Custom Instructions (standalone section for visibility) */}
       {customInstructionsText && (
         <PromptSection
-          label="Instrucciones del Admin"
+          label={t('probador.adminInstructions')}
           labelColor="text-yellow-400"
           bgColor="bg-yellow-950"
           textColor="text-yellow-100"
@@ -126,7 +129,7 @@ export default function PromptView({ trace }) {
       {responseText && (
         <div className="mt-4 pt-4 border-t border-gray-200">
           <span className="text-[10px] uppercase tracking-wider font-semibold text-emerald-500 flex items-center gap-1 mb-1.5">
-            <Sparkles className="w-3 h-3" /> Respuesta de OpenAI
+            <Sparkles className="w-3 h-3" /> {t('probador.openaiResponse')}
           </span>
           <pre className="bg-emerald-950 text-emerald-100 rounded-lg p-3 text-[11px] overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed border border-emerald-800">
             {responseText}
@@ -145,8 +148,8 @@ export default function PromptView({ trace }) {
       {!systemPromptFull && !responseText && (
         <div className="text-center py-8">
           <FileText className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-          <p className="text-xs text-gray-400">No hay datos de prompt disponibles en este trace</p>
-          <p className="text-[10px] text-gray-300 mt-1">Asegurate de enviar un mensaje con Rayos X activado</p>
+          <p className="text-xs text-gray-400">{t('probador.noPromptDataAvailable')}</p>
+          <p className="text-[10px] text-gray-300 mt-1">{t('probador.enableRayosXHint')}</p>
         </div>
       )}
     </div>

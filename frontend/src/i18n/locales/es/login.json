@@ -1,0 +1,10 @@
+{
+  "subtitle": "Ingresa tus credenciales para continuar",
+  "username": "Usuario",
+  "usernamePlaceholder": "admin",
+  "password": "Contraseña",
+  "submitting": "Ingresando...",
+  "submit": "Ingresar",
+  "error": "Error al iniciar sesión",
+  "footer": "Respaldos Chile © 2025"
+}

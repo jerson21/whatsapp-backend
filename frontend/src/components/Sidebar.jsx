@@ -1,19 +1,21 @@
+import { useTranslation } from 'react-i18next'
 import { useFlowStore } from '../store/flowStore'
 
 const nodeTypes = [
-  { type: 'trigger', label: 'Trigger', icon: '⚡', color: '#667eea', description: 'Inicio del flujo' },
-  { type: 'message', label: 'Mensaje', icon: '💬', color: '#25D366', description: 'Enviar mensaje' },
-  { type: 'question', label: 'Pregunta', icon: '❓', color: '#34B7F1', description: 'Preguntar y esperar' },
-  { type: 'condition', label: 'Condición', icon: '🔀', color: '#f59e0b', description: 'Bifurcación' },
-  { type: 'action', label: 'Acción', icon: '⚙️', color: '#6366f1', description: 'Ejecutar acción' },
-  { type: 'ai_response', label: 'Respuesta IA', icon: '🧠', color: '#8b5cf6', description: 'Generar con IA' },
-  { type: 'webhook', label: 'Webhook', icon: '🌐', color: '#f97316', description: 'Llamar API externa' },
-  { type: 'delay', label: 'Espera', icon: '⏱️', color: '#64748b', description: 'Pausar X segundos' },
-  { type: 'transfer', label: 'Transferir', icon: '👤', color: '#ec4899', description: 'Pasar a humano' },
-  { type: 'end', label: 'Fin', icon: '🏁', color: '#ef4444', description: 'Terminar flujo' }
+  { type: 'trigger', labelKey: 'sidebar.trigger', icon: '⚡', color: '#667eea', descKey: 'sidebar.triggerDesc' },
+  { type: 'message', labelKey: 'sidebar.message', icon: '💬', color: '#25D366', descKey: 'sidebar.messageDesc' },
+  { type: 'question', labelKey: 'sidebar.question', icon: '❓', color: '#34B7F1', descKey: 'sidebar.questionDesc' },
+  { type: 'condition', labelKey: 'sidebar.condition', icon: '🔀', color: '#f59e0b', descKey: 'sidebar.conditionDesc' },
+  { type: 'action', labelKey: 'sidebar.action', icon: '⚙️', color: '#6366f1', descKey: 'sidebar.actionDesc' },
+  { type: 'ai_response', labelKey: 'sidebar.aiResponse', icon: '🧠', color: '#8b5cf6', descKey: 'sidebar.aiResponseDesc' },
+  { type: 'webhook', labelKey: 'sidebar.webhook', icon: '🌐', color: '#f97316', descKey: 'sidebar.webhookDesc' },
+  { type: 'delay', labelKey: 'sidebar.delay', icon: '⏱️', color: '#64748b', descKey: 'sidebar.delayDesc' },
+  { type: 'transfer', labelKey: 'sidebar.transfer', icon: '👤', color: '#ec4899', descKey: 'sidebar.transferDesc' },
+  { type: 'end', labelKey: 'sidebar.end', icon: '🏁', color: '#ef4444', descKey: 'sidebar.endDesc' }
 ]
 
 export default function Sidebar() {
+  const { t } = useTranslation('flowBuilder')
   const { isSidebarOpen, toggleSidebar } = useFlowStore()
 
   const onDragStart = (event, nodeType) => {
@@ -40,7 +42,7 @@ export default function Sidebar() {
           gap: '6px'
         }}
       >
-        <span>☰</span> Nodos
+        <span>☰</span> {t('sidebar.title')}
       </button>
     )
   }
@@ -62,7 +64,7 @@ export default function Sidebar() {
         marginBottom: '16px'
       }}>
         <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>
-          Nodos
+          {t('sidebar.title')}
         </h3>
         <button
           onClick={toggleSidebar}
@@ -79,7 +81,7 @@ export default function Sidebar() {
       </div>
 
       <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '16px' }}>
-        Arrastra los nodos al canvas para construir tu flujo
+        {t('sidebar.hint')}
       </p>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -110,8 +112,8 @@ export default function Sidebar() {
           >
             <span style={{ fontSize: '20px' }}>{node.icon}</span>
             <div>
-              <div style={{ fontWeight: 500, fontSize: '13px' }}>{node.label}</div>
-              <div style={{ fontSize: '11px', color: '#6b7280' }}>{node.description}</div>
+              <div style={{ fontWeight: 500, fontSize: '13px' }}>{t(node.labelKey)}</div>
+              <div style={{ fontSize: '11px', color: '#6b7280' }}>{t(node.descKey)}</div>
             </div>
           </div>
         ))}

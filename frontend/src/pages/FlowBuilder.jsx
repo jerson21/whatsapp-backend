@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import Toolbar from '../components/Toolbar'
 import Sidebar from '../components/Sidebar'
 import FlowCanvas from '../components/FlowCanvas'
@@ -10,6 +11,7 @@ import { useFlowStore } from '../store/flowStore'
 import { fetchFlow, createFromTemplate } from '../api/flows'
 
 export default function FlowBuilder() {
+  const { t } = useTranslation('flowBuilder')
   const { id } = useParams()
   const [showSimulator, setShowSimulator] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
@@ -37,13 +39,13 @@ export default function FlowBuilder() {
       const flowData = await fetchFlow(flowId)
       if (flowData.flow) {
         loadFlow(flowData.flow)
-        showNotification(`Flujo "${flowData.flow.name}" cargado correctamente`, 'success')
+        showNotification(t('flowLoaded', { name: flowData.flow.name }), 'success')
       } else {
-        throw new Error('No se pudo obtener los datos del flujo')
+        throw new Error(t('errorLoadingFlow'))
       }
     } catch (err) {
       console.error('Error loading flow:', err)
-      showNotification(`Error al cargar flujo: ${err.message}`, 'error')
+      showNotification(`${t('errorLoadingFlowAlert')}: ${err.message}`, 'error')
     } finally {
       setIsLoading(false)
     }
@@ -71,16 +73,16 @@ export default function FlowBuilder() {
 
           if (flowData.flow) {
             loadFlow(flowData.flow)
-            showNotification(`Flujo "${flowData.flow.name}" cargado correctamente`, 'success')
+            showNotification(t('flowLoaded', { name: flowData.flow.name }), 'success')
           } else {
-            throw new Error('No se pudo obtener los datos del flujo')
+            throw new Error(t('errorLoadingFlow'))
           }
         } else {
-          throw new Error('No se recibió el ID del flujo creado')
+          throw new Error(t('errorNoFlowId'))
         }
       } catch (err) {
         console.error('Error loading template:', err)
-        showNotification(`Error al cargar template: ${err.message}`, 'error')
+        showNotification(`${t('errorLoadingTemplate')}: ${err.message}`, 'error')
       } finally {
         setIsLoading(false)
       }
@@ -129,7 +131,7 @@ export default function FlowBuilder() {
         }}
       >
         <span style={{ fontSize: '18px' }}>🧪</span>
-        Probar flujo
+        {t('testFlow')}
       </button>
 
       {/* Loading overlay */}
@@ -162,7 +164,7 @@ export default function FlowBuilder() {
               borderRadius: '50%',
               animation: 'spin 1s linear infinite'
             }} />
-            <span>Cargando flujo...</span>
+            <span>{t('loadingFlow')}</span>
           </div>
         </div>
       )}

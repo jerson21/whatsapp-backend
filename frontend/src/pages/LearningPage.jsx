@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Brain, BookOpen, DollarSign, BarChart3,
   Check, X, Trash2, RefreshCw, Plus, Edit,
@@ -18,19 +19,19 @@ import {
   fetchBehavioralRules, createBehavioralRule, deleteBehavioralRule
 } from '../api/learning'
 import { formatDistanceToNow } from 'date-fns'
-import { es } from 'date-fns/locale'
+import { getDateLocale } from '../i18n/dateLocale'
 
 // =============================================
 // TABS
 // =============================================
 
 const TABS = [
-  { id: 'brain', label: 'Cerebro IA', icon: Brain },
-  { id: 'instructions', label: 'Instrucciones', icon: FileText },
-  { id: 'bot-conversations', label: 'Conversaciones IA', icon: MessageSquare },
-  { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
-  { id: 'pairs', label: 'Pares Q&A', icon: BookOpen },
-  { id: 'prices', label: 'Precios', icon: DollarSign }
+  { id: 'brain', labelKey: 'tabs.brain', icon: Brain },
+  { id: 'instructions', labelKey: 'tabs.instructions', icon: FileText },
+  { id: 'bot-conversations', labelKey: 'tabs.conversations', icon: MessageSquare },
+  { id: 'dashboard', labelKey: 'tabs.dashboard', icon: BarChart3 },
+  { id: 'pairs', labelKey: 'tabs.qaPairs', icon: BookOpen },
+  { id: 'prices', labelKey: 'tabs.pricing', icon: DollarSign }
 ]
 
 // =============================================
@@ -65,24 +66,24 @@ function ConfidenceGauge({ label, value }) {
 }
 
 const METRIC_LABELS = {
-  confianza_general: 'Confianza General',
-  cobertura_temas: 'Cobertura de Temas',
-  calidad_respuestas: 'Calidad Respuestas',
-  actualizacion_precios: 'Precios Actualizados'
+  confianza_general: 'metrics.generalConfidence',
+  cobertura_temas: 'metrics.topicCoverage',
+  calidad_respuestas: 'metrics.responseQuality',
+  actualizacion_precios: 'metrics.updatedPricing'
 }
 
 const CAPABILITY_LABELS = {
-  puede_responder_precios: 'Responder Precios',
-  puede_comparar_productos: 'Comparar Productos',
-  puede_recomendar: 'Recomendar',
-  puede_dar_plazos: 'Informar Plazos',
-  puede_informar_despacho: 'Informar Despacho'
+  puede_responder_precios: 'capabilities.answerPricing',
+  puede_comparar_productos: 'capabilities.compareProducts',
+  puede_recomendar: 'capabilities.recommend',
+  puede_dar_plazos: 'capabilities.informDeadlines',
+  puede_informar_despacho: 'capabilities.informShipping'
 }
 
 const STATUS_BADGE = {
-  pending: { label: 'Pendiente', cls: 'bg-yellow-50 text-yellow-700' },
-  approved: { label: 'Aprobado', cls: 'bg-green-50 text-green-700' },
-  rejected: { label: 'Rechazado', cls: 'bg-red-50 text-red-700' }
+  pending: { labelKey: 'status.pending', cls: 'bg-yellow-50 text-yellow-700' },
+  approved: { labelKey: 'status.approved', cls: 'bg-green-50 text-green-700' },
+  rejected: { labelKey: 'status.rejected', cls: 'bg-red-50 text-red-700' }
 }
 
 // =============================================
@@ -90,6 +91,7 @@ const STATUS_BADGE = {
 // =============================================
 
 function BrainSection() {
+  const { t } = useTranslation('learning')
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
@@ -142,7 +144,7 @@ function BrainSection() {
       <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
         <AlertTriangle className="w-8 h-8 text-red-400 mx-auto mb-2" />
         <p className="text-red-700">{error}</p>
-        <button onClick={loadReport} className="mt-3 text-sm text-red-600 underline">Reintentar</button>
+        <button onClick={loadReport} className="mt-3 text-sm text-red-600 underline">{t('common:actions.retry')}</button>
       </div>
     )
   }
@@ -159,12 +161,12 @@ function BrainSection() {
               <Brain className="w-8 h-8" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold">Cerebro IA</h2>
+              <h2 className="text-2xl font-bold">{t('tabs.brain')}</h2>
               <p className="text-indigo-200 text-sm mt-1">
                 {generatedAt
-                  ? `Ultimo analisis: ${formatDistanceToNow(new Date(generatedAt), { addSuffix: true, locale: es })}`
-                  : 'Sin analisis previo'}
-                {cached && ' (cacheado)'}
+                  ? `${t('brain.lastAnalysis')}: ${formatDistanceToNow(new Date(generatedAt), { addSuffix: true, locale: getDateLocale() })}`
+                  : t('brain.noAnalysis')}
+                {cached && ` (${t('brain.cached')})`}
               </p>
             </div>
           </div>
@@ -174,7 +176,7 @@ function BrainSection() {
             className="flex items-center gap-2 bg-white/20 hover:bg-white/30 px-4 py-2.5 rounded-lg transition disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${generating ? 'animate-spin' : ''}`} />
-            {generating ? 'Generando...' : 'Regenerar Analisis'}
+            {generating ? t('brain.generating') : t('brain.regenerate')}
           </button>
         </div>
       </div>
@@ -184,7 +186,7 @@ function BrainSection() {
         <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex items-center gap-3">
           <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0" />
           <p className="text-yellow-800 text-sm">
-            OpenAI no configurado. Se muestran datos basicos sin analisis IA. Configure OPENAI_API_KEY para el reporte completo.
+            {t('brain.openaiNotConfigured')}
           </p>
         </div>
       )}
@@ -192,10 +194,10 @@ function BrainSection() {
       {/* Stats rapidas */}
       {report?.stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatsCard title="Pares Aprobados" value={report.stats.approved} icon={BookOpen} color="green" subtitle="Base de conocimiento" />
-          <StatsCard title="Pendientes" value={report.stats.pending} icon={AlertTriangle} color="yellow" subtitle="Por revisar" />
-          <StatsCard title="Precios Activos" value={report.stats.active_prices} icon={DollarSign} color="blue" subtitle="Productos con precio" />
-          <StatsCard title="Calidad Promedio" value={`${report.stats.avg_quality || 0}/100`} icon={TrendingUp} color="purple" subtitle="Score Q&A" />
+          <StatsCard title={t('brain.approvedPairs')} value={report.stats.approved} icon={BookOpen} color="green" subtitle={t('brain.knowledgeBase')} />
+          <StatsCard title={t('brain.pendingPairs')} value={report.stats.pending} icon={AlertTriangle} color="yellow" subtitle={t('brain.toReview')} />
+          <StatsCard title={t('brain.activePrices')} value={report.stats.active_prices} icon={DollarSign} color="blue" subtitle={t('brain.productsWithPrice')} />
+          <StatsCard title={t('brain.avgQuality')} value={`${report.stats.avg_quality || 0}/100`} icon={TrendingUp} color="purple" subtitle={t('brain.qaScore')} />
         </div>
       )}
 
@@ -205,7 +207,7 @@ function BrainSection() {
       {!analysis ? (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-12 text-center">
           <Brain className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-400">Sin datos de analisis. Aprueba pares Q&A y presiona "Regenerar Analisis".</p>
+          <p className="text-gray-400">{t('brain.noData')}</p>
         </div>
       ) : (
         <>
@@ -213,7 +215,7 @@ function BrainSection() {
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
             <div className="border-l-4 border-indigo-500 pl-4">
               <h3 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-indigo-500" /> Resumen General
+                <Sparkles className="w-5 h-5 text-indigo-500" /> {t('brain.generalSummary')}
               </h3>
               <p className="text-gray-600 leading-relaxed">{analysis.resumen}</p>
             </div>
@@ -223,7 +225,7 @@ function BrainSection() {
           {analysis.metricas_confianza && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {Object.entries(analysis.metricas_confianza).map(([key, value]) => (
-                <ConfidenceGauge key={key} label={METRIC_LABELS[key] || key} value={Number(value) || 0} />
+                <ConfidenceGauge key={key} label={t(METRIC_LABELS[key] || key)} value={Number(value) || 0} />
               ))}
             </div>
           )}
@@ -233,10 +235,10 @@ function BrainSection() {
             {/* Temas Dominados */}
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
               <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <Target className="w-5 h-5 text-green-500" /> Temas Dominados
+                <Target className="w-5 h-5 text-green-500" /> {t('brain.masteredTopics')}
               </h3>
               {(analysis.temas_dominados || []).length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-4">Sin temas detectados aun</p>
+                <p className="text-gray-400 text-sm text-center py-4">{t('brain.noTopics')}</p>
               ) : (
                 <div className="space-y-3">
                   {analysis.temas_dominados.map((tema, idx) => (
@@ -264,10 +266,10 @@ function BrainSection() {
             {/* Brechas de Conocimiento */}
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
               <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-yellow-500" /> Brechas de Conocimiento
+                <AlertTriangle className="w-5 h-5 text-yellow-500" /> {t('brain.knowledgeGaps')}
               </h3>
               {(analysis.brechas_conocimiento || []).length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-4">Sin brechas detectadas</p>
+                <p className="text-gray-400 text-sm text-center py-4">{t('brain.noGaps')}</p>
               ) : (
                 <div className="space-y-3">
                   {analysis.brechas_conocimiento.map((brecha, idx) => (
@@ -292,7 +294,7 @@ function BrainSection() {
           {analysis.capacidades && (
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
               <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <Zap className="w-5 h-5 text-blue-500" /> Capacidades
+                <Zap className="w-5 h-5 text-blue-500" /> {t('brain.capabilities')}
               </h3>
               <div className="flex flex-wrap gap-3">
                 {Object.entries(analysis.capacidades).map(([key, value]) => (
@@ -300,7 +302,7 @@ function BrainSection() {
                     value ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-400'
                   }`}>
                     {value ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
-                    {CAPABILITY_LABELS[key] || key}
+                    {t(CAPABILITY_LABELS[key] || key)}
                   </span>
                 ))}
               </div>
@@ -311,7 +313,7 @@ function BrainSection() {
           {analysis.razonamiento && (
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
               <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                <Brain className="w-5 h-5 text-purple-500" /> Razonamiento
+                <Brain className="w-5 h-5 text-purple-500" /> {t('brain.reasoning')}
               </h3>
               <p className="text-gray-600 leading-relaxed italic">{analysis.razonamiento}</p>
             </div>
@@ -321,7 +323,7 @@ function BrainSection() {
           {analysis.recomendaciones?.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
               <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-indigo-500" /> Recomendaciones
+                <TrendingUp className="w-5 h-5 text-indigo-500" /> {t('brain.recommendations')}
               </h3>
               <ul className="space-y-2">
                 {analysis.recomendaciones.map((rec, idx) => (
@@ -337,10 +339,10 @@ function BrainSection() {
           {/* Footer info */}
           <div className="bg-gray-50 rounded-xl p-4 text-xs text-gray-400 flex items-center justify-between">
             <span>
-              Datos base: {report?.stats?.approved || 0} pares aprobados, {report?.stats?.active_prices || 0} precios
+              {t('brain.baseData', { pairs: report?.stats?.approved || 0, prices: report?.stats?.active_prices || 0 })}
             </span>
             <span>
-              {report?.ai_available ? 'Analisis generado por IA' : 'Datos sin analisis IA'}
+              {report?.ai_available ? t('brain.aiGenerated') : t('brain.noAiAnalysis')}
             </span>
           </div>
         </>
@@ -354,7 +356,8 @@ function BrainSection() {
 // =============================================
 
 function DashboardSection({ stats }) {
-  if (!stats) return <p className="text-gray-400 text-center py-8">Cargando estadisticas...</p>
+  const { t } = useTranslation('learning')
+  if (!stats) return <p className="text-gray-400 text-center py-8">{t('dashboard.loadingStats')}</p>
 
   const channelEntries = Object.entries(stats.by_channel || {})
   const totalByChannel = channelEntries.reduce((sum, [, v]) => sum + v, 0) || 1
@@ -362,15 +365,15 @@ function DashboardSection({ stats }) {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatsCard title="Total Pares" value={stats.total} icon={BookOpen} color="blue" subtitle="Q&A aprendidos" />
-        <StatsCard title="Aprobados" value={stats.approved} icon={Check} color="green" subtitle={`${stats.with_embedding} con embedding`} />
-        <StatsCard title="Pendientes" value={stats.pending} icon={AlertTriangle} color="yellow" subtitle="Por revisar" />
-        <StatsCard title="Calidad Promedio" value={`${stats.avg_quality || 0}/100`} icon={TrendingUp} color="purple" subtitle="Score de calidad" />
+        <StatsCard title={t('dashboard.totalPairs')} value={stats.total} icon={BookOpen} color="blue" subtitle={t('dashboard.qaLearned')} />
+        <StatsCard title={t('dashboard.approved')} value={stats.approved} icon={Check} color="green" subtitle={t('dashboard.withEmbedding', { count: stats.with_embedding })} />
+        <StatsCard title={t('dashboard.pending')} value={stats.pending} icon={AlertTriangle} color="yellow" subtitle={t('brain.toReview')} />
+        <StatsCard title={t('brain.avgQuality')} value={`${stats.avg_quality || 0}/100`} icon={TrendingUp} color="purple" subtitle={t('dashboard.qualityScore')} />
       </div>
 
       {channelEntries.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-          <h3 className="font-semibold text-gray-800 mb-4">Distribucion por Canal</h3>
+          <h3 className="font-semibold text-gray-800 mb-4">{t('dashboard.channelDistribution')}</h3>
           <div className="space-y-3">
             {channelEntries.map(([channel, count]) => (
               <div key={channel}>
@@ -398,6 +401,7 @@ function DashboardSection({ stats }) {
 // =============================================
 
 function PairsSection() {
+  const { t } = useTranslation('learning')
   const [pairs, setPairs] = useState([])
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
@@ -432,14 +436,14 @@ function PairsSection() {
     try { await updatePairStatus(id, 'rejected'); loadPairs() } catch (e) { alert(e.message) }
   }
   const handleDelete = async (id) => {
-    if (!confirm('Eliminar este par permanentemente?')) return
+    if (!confirm(t('pairs.deleteConfirm'))) return
     try { await deletePair(id); loadPairs() } catch (e) { alert(e.message) }
   }
   const handleReprocess = async () => {
     setReprocessing(true)
     try {
       const result = await reprocessSessions(reprocessForm.from, reprocessForm.to)
-      alert(`Reprocesadas: ${result.processed} sesiones`)
+      alert(t('pairs.reprocessed', { count: result.processed }))
       setShowReprocess(false)
       loadPairs()
     } catch (e) { alert(e.message) }
@@ -460,31 +464,31 @@ function PairsSection() {
           onChange={e => updateFilter('status', e.target.value)}
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
         >
-          <option value="">Todos los estados</option>
-          <option value="pending">Pendientes</option>
-          <option value="approved">Aprobados</option>
-          <option value="rejected">Rechazados</option>
+          <option value="">{t('pairs.allStatuses')}</option>
+          <option value="pending">{t('status.pending')}</option>
+          <option value="approved">{t('status.approved')}</option>
+          <option value="rejected">{t('status.rejected')}</option>
         </select>
         <select
           value={filters.channel}
           onChange={e => updateFilter('channel', e.target.value)}
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
         >
-          <option value="">Todos los canales</option>
+          <option value="">{t('pairs.allChannels')}</option>
           <option value="whatsapp">WhatsApp</option>
           <option value="instagram">Instagram</option>
         </select>
         <input
           type="number"
-          placeholder="Calidad min."
+          placeholder={t('pairs.minQuality')}
           value={filters.minQuality}
           onChange={e => updateFilter('minQuality', e.target.value)}
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm w-28"
           min="0" max="100"
         />
-        <span className="text-sm text-gray-400 ml-auto">{total} pares en total</span>
+        <span className="text-sm text-gray-400 ml-auto">{t('pairs.totalPairs', { count: total })}</span>
         <button onClick={() => setShowReprocess(true)} className="flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-700 font-medium">
-          <RefreshCw className="w-4 h-4" /> Reprocesar
+          <RefreshCw className="w-4 h-4" /> {t('pairs.reprocess')}
         </button>
       </div>
 
@@ -493,19 +497,19 @@ function PairsSection() {
         <table className="w-full">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Pregunta</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Respuesta</th>
-              <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Calidad</th>
-              <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Canal</th>
-              <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Estado</th>
-              <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Acciones</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">{t('pairs.question')}</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">{t('pairs.answer')}</th>
+              <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">{t('pairs.quality')}</th>
+              <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">{t('pairs.channel')}</th>
+              <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">{t('pairs.status')}</th>
+              <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase">{t('pairs.actions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {loading ? (
-              <tr><td colSpan="6" className="text-center py-8 text-gray-400">Cargando...</td></tr>
+              <tr><td colSpan="6" className="text-center py-8 text-gray-400">{t('common:status.loading')}</td></tr>
             ) : pairs.length === 0 ? (
-              <tr><td colSpan="6" className="text-center py-12 text-gray-400">No hay pares que coincidan con los filtros</td></tr>
+              <tr><td colSpan="6" className="text-center py-12 text-gray-400">{t('pairs.noResults')}</td></tr>
             ) : pairs.map(pair => (
               <tr key={pair.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 text-sm text-gray-700 max-w-[200px] truncate">{pair.question}</td>
@@ -520,25 +524,25 @@ function PairsSection() {
                 </td>
                 <td className="px-4 py-3 text-center">
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE[pair.status]?.cls || ''}`}>
-                    {STATUS_BADGE[pair.status]?.label || pair.status}
+                    {STATUS_BADGE[pair.status]?.labelKey ? t(STATUS_BADGE[pair.status].labelKey) : pair.status}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex items-center justify-end gap-1">
-                    <button onClick={() => setDetailPair(pair)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="Ver detalle">
+                    <button onClick={() => setDetailPair(pair)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title={t('pairs.viewDetail')}>
                       <Eye className="w-4 h-4" />
                     </button>
                     {pair.status !== 'approved' && (
-                      <button onClick={() => handleApprove(pair.id)} className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg" title="Aprobar">
+                      <button onClick={() => handleApprove(pair.id)} className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg" title={t('pairs.approve')}>
                         <Check className="w-4 h-4" />
                       </button>
                     )}
                     {pair.status !== 'rejected' && (
-                      <button onClick={() => handleReject(pair.id)} className="p-1.5 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg" title="Rechazar">
+                      <button onClick={() => handleReject(pair.id)} className="p-1.5 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg" title={t('pairs.reject')}>
                         <X className="w-4 h-4" />
                       </button>
                     )}
-                    <button onClick={() => handleDelete(pair.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg" title="Eliminar">
+                    <button onClick={() => handleDelete(pair.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg" title={t('common:actions.delete')}>
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -555,7 +559,7 @@ function PairsSection() {
           <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="p-2 text-gray-500 hover:text-gray-700 disabled:opacity-30">
             <ChevronLeft className="w-5 h-5" />
           </button>
-          <span className="text-sm text-gray-600">Pagina {page} de {totalPages}</span>
+          <span className="text-sm text-gray-600">{t('pairs.page', { current: page, total: totalPages })}</span>
           <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="p-2 text-gray-500 hover:text-gray-700 disabled:opacity-30">
             <ChevronRight className="w-5 h-5" />
           </button>
@@ -566,35 +570,35 @@ function PairsSection() {
       {detailPair && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setDetailPair(null)}>
           <div className="bg-white rounded-2xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Detalle del Par Q&A</h2>
+            <h2 className="text-lg font-bold text-gray-900 mb-4">{t('pairs.detailTitle')}</h2>
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Pregunta del cliente</label>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">{t('pairs.customerQuestion')}</label>
                 <p className="text-gray-800 bg-gray-50 rounded-lg p-3 text-sm">{detailPair.question}</p>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Respuesta del agente</label>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">{t('pairs.agentAnswer')}</label>
                 <p className="text-gray-800 bg-gray-50 rounded-lg p-3 text-sm whitespace-pre-wrap">{detailPair.answer}</p>
               </div>
               <div className="flex gap-4 text-sm text-gray-500">
-                <span>Calidad: <strong className="text-gray-700">{detailPair.quality_score}</strong></span>
-                <span>Canal: <strong className="text-gray-700 capitalize">{detailPair.channel}</strong></span>
-                <span>Estado: <strong className="text-gray-700">{STATUS_BADGE[detailPair.status]?.label}</strong></span>
+                <span>{t('pairs.quality')}: <strong className="text-gray-700">{detailPair.quality_score}</strong></span>
+                <span>{t('pairs.channel')}: <strong className="text-gray-700 capitalize">{detailPair.channel}</strong></span>
+                <span>{t('pairs.status')}: <strong className="text-gray-700">{STATUS_BADGE[detailPair.status]?.labelKey ? t(STATUS_BADGE[detailPair.status].labelKey) : detailPair.status}</strong></span>
               </div>
             </div>
             <div className="flex gap-3 mt-6">
               {detailPair.status !== 'approved' && (
                 <button onClick={() => { handleApprove(detailPair.id); setDetailPair(null) }} className="flex-1 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg transition text-sm font-medium">
-                  Aprobar
+                  {t('pairs.approve')}
                 </button>
               )}
               {detailPair.status !== 'rejected' && (
                 <button onClick={() => { handleReject(detailPair.id); setDetailPair(null) }} className="flex-1 px-4 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition text-sm font-medium">
-                  Rechazar
+                  {t('pairs.reject')}
                 </button>
               )}
               <button onClick={() => setDetailPair(null)} className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition text-sm">
-                Cerrar
+                {t('common:actions.close')}
               </button>
             </div>
           </div>
@@ -605,27 +609,27 @@ function PairsSection() {
       {showReprocess && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowReprocess(false)}>
           <div className="bg-white rounded-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Reprocesar Sesiones</h2>
-            <p className="text-sm text-gray-500 mb-4">Extrae pares Q&A de conversaciones pasadas. Opcional: filtra por rango de fechas.</p>
+            <h2 className="text-lg font-bold text-gray-900 mb-4">{t('pairs.reprocessTitle')}</h2>
+            <p className="text-sm text-gray-500 mb-4">{t('pairs.reprocessDesc')}</p>
             <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Desde (opcional)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('pairs.from')}</label>
                 <input type="date" value={reprocessForm.from} onChange={e => setReprocessForm(f => ({ ...f, from: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Hasta (opcional)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('pairs.to')}</label>
                 <input type="date" value={reprocessForm.to} onChange={e => setReprocessForm(f => ({ ...f, to: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
               </div>
             </div>
             <div className="flex gap-3 mt-6">
               <button onClick={() => setShowReprocess(false)} className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition text-sm">
-                Cancelar
+                {t('common:actions.cancel')}
               </button>
               <button onClick={handleReprocess} disabled={reprocessing}
                 className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition text-sm font-medium disabled:opacity-50">
-                {reprocessing ? 'Procesando...' : 'Reprocesar'}
+                {reprocessing ? t('pairs.processing') : t('pairs.reprocess')}
               </button>
             </div>
           </div>
@@ -640,6 +644,7 @@ function PairsSection() {
 // =============================================
 
 function PricesSection() {
+  const { t } = useTranslation('learning')
   const [prices, setPrices] = useState([])
   const [loading, setLoading] = useState(true)
   const [showInactive, setShowInactive] = useState(false)
@@ -715,7 +720,7 @@ function PricesSection() {
   }
 
   const handleDeactivate = async (id) => {
-    if (!confirm('Desactivar este precio?')) return
+    if (!confirm(t('prices.deactivateConfirm'))) return
     try { await deletePrice(id); loadPrices() } catch (e) { alert(e.message) }
   }
 
@@ -726,10 +731,10 @@ function PricesSection() {
         <label className="flex items-center gap-2 text-sm text-gray-600">
           <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)}
             className="rounded border-gray-300" />
-          Mostrar inactivos
+          {t('prices.showInactive')}
         </label>
         <button onClick={openCreate} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg transition font-medium text-sm">
-          <Plus className="w-4 h-4" /> Nuevo Precio
+          <Plus className="w-4 h-4" /> {t('prices.newPrice')}
         </button>
       </div>
 
@@ -738,19 +743,19 @@ function PricesSection() {
         <table className="w-full">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Producto</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Variante</th>
-              <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Precio</th>
-              <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Estado</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Notas</th>
-              <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Acciones</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">{t('prices.product')}</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">{t('prices.variant')}</th>
+              <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase">{t('prices.price')}</th>
+              <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">{t('prices.status')}</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">{t('prices.notes')}</th>
+              <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase">{t('prices.actions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {loading ? (
-              <tr><td colSpan="6" className="text-center py-8 text-gray-400">Cargando...</td></tr>
+              <tr><td colSpan="6" className="text-center py-8 text-gray-400">{t('common:status.loading')}</td></tr>
             ) : prices.length === 0 ? (
-              <tr><td colSpan="6" className="text-center py-12 text-gray-400">No hay precios. Crea el primero.</td></tr>
+              <tr><td colSpan="6" className="text-center py-12 text-gray-400">{t('prices.noPrices')}</td></tr>
             ) : prices.map(p => (
               <tr key={p.id} className={`hover:bg-gray-50 ${!p.is_active ? 'opacity-50' : ''}`}>
                 <td className="px-4 py-3 text-sm font-medium text-gray-800">{p.product_name}</td>
@@ -761,16 +766,16 @@ function PricesSection() {
                 <td className="px-4 py-3 text-center">
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                     p.is_active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'
-                  }`}>{p.is_active ? 'Activo' : 'Inactivo'}</span>
+                  }`}>{p.is_active ? t('prices.active') : t('prices.inactive')}</span>
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-500 max-w-[200px] truncate">{p.notes || '-'}</td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex items-center justify-end gap-1">
-                    <button onClick={() => openEdit(p)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="Editar">
+                    <button onClick={() => openEdit(p)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title={t('common:actions.edit')}>
                       <Edit className="w-4 h-4" />
                     </button>
                     {p.is_active && (
-                      <button onClick={() => handleDeactivate(p.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg" title="Desactivar">
+                      <button onClick={() => handleDeactivate(p.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg" title={t('prices.deactivate')}>
                         <Trash2 className="w-4 h-4" />
                       </button>
                     )}
@@ -787,28 +792,28 @@ function PricesSection() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowModal(false)}>
           <div className="bg-white rounded-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
             <h2 className="text-lg font-bold text-gray-900 mb-4">
-              {editingPrice ? 'Editar Precio' : 'Nuevo Precio'}
+              {editingPrice ? t('prices.editPrice') : t('prices.newPrice')}
             </h2>
             {error && <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm mb-4">{error}</div>}
             <form onSubmit={handleSave} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Producto</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('prices.product')}</label>
                 <input type="text" value={form.product_name} onChange={e => setForm({ ...form, product_name: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" required placeholder="Ej: Colchon Spring" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Variante (opcional)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('prices.variant')}</label>
                 <input type="text" value={form.variant} onChange={e => setForm({ ...form, variant: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Ej: King, Queen, 2 Plazas" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Precio</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('prices.price')}</label>
                   <input type="number" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" required min="0" step="1" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Moneda</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('prices.currency')}</label>
                   <select value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
                     <option value="CLP">CLP</option>
@@ -817,18 +822,18 @@ function PricesSection() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notas (opcional)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('prices.notes')}</label>
                 <input type="text" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Ej: Precio promocional hasta Marzo" />
               </div>
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setShowModal(false)}
                   className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition text-sm">
-                  Cancelar
+                  {t('common:actions.cancel')}
                 </button>
                 <button type="submit" disabled={saving}
                   className="flex-1 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg transition text-sm font-medium disabled:opacity-50">
-                  {saving ? 'Guardando...' : (editingPrice ? 'Guardar' : 'Crear')}
+                  {saving ? t('prices.saving') : (editingPrice ? t('common:actions.save') : t('common:actions.create'))}
                 </button>
               </div>
             </form>
@@ -889,6 +894,7 @@ Si no tienes certeza, responde exactamente:
 Usa solo informacion confirmada. Puedes mejorar redaccion y trato, pero sin cambiar datos.`
 
 function InstructionsSection() {
+  const { t } = useTranslation('learning')
   const [fullConfig, setFullConfig] = useState(null)
   const [instructions, setInstructions] = useState('')
   const [systemPrompt, setSystemPrompt] = useState('')
@@ -1021,9 +1027,9 @@ function InstructionsSection() {
             <FileText className="w-8 h-8" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold">Instrucciones para la IA</h2>
+            <h2 className="text-2xl font-bold">{t('instructions.title')}</h2>
             <p className="text-blue-200 text-sm mt-1">
-              Escribe reglas, conocimiento y procedimientos que la IA debe seguir
+              {t('instructions.subtitle')}
             </p>
           </div>
         </div>
@@ -1037,14 +1043,14 @@ function InstructionsSection() {
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
         <div className="flex items-center justify-between mb-3">
           <label className="block text-sm font-semibold text-gray-700">
-            Prompt del sistema (cerebro general)
+            {t('instructions.systemPromptLabel')}
           </label>
           {!showSystemPrompt ? (
             <button
               onClick={() => { setShowSystemPrompt(true); if (!systemPrompt) setSystemPrompt(DEFAULT_SYSTEM_PROMPT) }}
               className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
             >
-              <Edit className="w-3.5 h-3.5" /> Personalizar
+              <Edit className="w-3.5 h-3.5" /> {t('instructions.customize')}
             </button>
           ) : (
             <div className="flex items-center gap-2">
@@ -1052,13 +1058,13 @@ function InstructionsSection() {
                 onClick={() => setSystemPrompt(DEFAULT_SYSTEM_PROMPT)}
                 className="text-xs text-gray-500 hover:text-orange-600 font-medium flex items-center gap-1"
               >
-                <RotateCcw className="w-3.5 h-3.5" /> Restaurar default
+                <RotateCcw className="w-3.5 h-3.5" /> {t('instructions.restoreDefault')}
               </button>
               <button
                 onClick={() => { setSystemPrompt(''); setShowSystemPrompt(false) }}
                 className="text-xs text-gray-400 hover:text-red-500 font-medium flex items-center gap-1"
               >
-                <X className="w-3.5 h-3.5" /> Quitar
+                <X className="w-3.5 h-3.5" /> {t('instructions.remove')}
               </button>
             </div>
           )}
@@ -1066,7 +1072,7 @@ function InstructionsSection() {
 
         {!showSystemPrompt ? (
           <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-500">
-            <p>Usando el prompt por defecto. Haz click en "Personalizar" para editarlo.</p>
+            <p>{t('instructions.usingDefault')}</p>
             <p className="mt-1 text-xs text-gray-400">Tip: Usa <code className="bg-gray-200 px-1 rounded">{'{{nombre}}'}</code> para inyectar el nombre del cliente automaticamente.</p>
           </div>
         ) : (
@@ -1088,9 +1094,9 @@ function InstructionsSection() {
       {/* Instrucciones adicionales */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
         <label className="block text-sm font-semibold text-gray-700 mb-3">
-          Instrucciones adicionales
+          {t('instructions.additionalInstructions')}
         </label>
-        <p className="text-xs text-gray-400 mb-3">Reglas especificas, conocimiento del negocio, procedimientos. Se agregan al prompt del sistema.</p>
+        <p className="text-xs text-gray-400 mb-3">{t('instructions.additionalDesc')}</p>
         <textarea
           value={instructions}
           onChange={e => setInstructions(e.target.value)}
@@ -1113,11 +1119,11 @@ function InstructionsSection() {
               className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg transition font-medium text-sm disabled:opacity-50"
             >
               <Save className="w-4 h-4" />
-              {saving ? 'Guardando...' : 'Guardar Todo'}
+              {saving ? t('instructions.saving') : t('instructions.saveAll')}
             </button>
             {saved && (
               <span className="text-green-600 text-sm font-medium flex items-center gap-1">
-                <Check className="w-4 h-4" /> Guardado
+                <Check className="w-4 h-4" /> {t('instructions.saved')}
               </span>
             )}
           </div>
@@ -1126,13 +1132,13 @@ function InstructionsSection() {
               onClick={viewPrompt}
               className="flex items-center gap-2 text-sm text-gray-600 hover:text-indigo-600 font-medium transition"
             >
-              <Code className="w-4 h-4" /> Ver Prompt
+              <Code className="w-4 h-4" /> {t('instructions.viewPrompt')}
             </button>
             <button
               onClick={() => setShowTester(true)}
               className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition font-medium text-sm"
             >
-              <Play className="w-4 h-4" /> Probar IA
+              <Play className="w-4 h-4" /> {t('instructions.testAI')}
             </button>
           </div>
         </div>
@@ -1143,25 +1149,25 @@ function InstructionsSection() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-              <Shield className="w-4 h-4 text-purple-500" /> Reglas de Comportamiento
+              <Shield className="w-4 h-4 text-purple-500" /> {t('rules.title')}
             </h3>
             <p className="text-xs text-gray-400 mt-1">
-              Reglas que la IA debe seguir siempre. Se inyectan con prioridad alta en cada respuesta.
+              {t('rules.subtitle')}
             </p>
           </div>
           <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-purple-50 text-purple-700">
-            {rules.length}/30 reglas
+            {t('rules.count', { count: rules.length, max: 30 })}
           </span>
         </div>
 
         {/* Rule list */}
         {rulesLoading ? (
-          <div className="text-center py-6 text-gray-400 text-sm">Cargando reglas...</div>
+          <div className="text-center py-6 text-gray-400 text-sm">{t('rules.loading')}</div>
         ) : rules.length === 0 ? (
           <div className="text-center py-6">
             <Shield className="w-8 h-8 text-gray-200 mx-auto mb-2" />
-            <p className="text-sm text-gray-400">Sin reglas todavia</p>
-            <p className="text-xs text-gray-300 mt-1">Agrega reglas aqui o desde el Probador IA con "Corregir"</p>
+            <p className="text-sm text-gray-400">{t('rules.noRules')}</p>
+            <p className="text-xs text-gray-300 mt-1">{t('rules.noRulesHint')}</p>
           </div>
         ) : (
           <div className="space-y-2 mb-4">
@@ -1188,7 +1194,7 @@ function InstructionsSection() {
                 <button
                   onClick={() => handleDeleteRule(rule.id)}
                   className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition opacity-0 group-hover:opacity-100"
-                  title="Eliminar regla"
+                  title={t('rules.deleteRule')}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -1214,12 +1220,12 @@ function InstructionsSection() {
               onChange={e => setNewRuleCategory(e.target.value)}
               className="px-2 py-2 border border-gray-300 rounded-lg text-xs text-gray-600"
             >
-              <option value="general">General</option>
-              <option value="tone">Tono</option>
-              <option value="knowledge">Conocimiento</option>
-              <option value="sales">Ventas</option>
-              <option value="format">Formato</option>
-              <option value="safety">Seguridad</option>
+              <option value="general">{t('rules.catGeneral')}</option>
+              <option value="tone">{t('rules.catTone')}</option>
+              <option value="knowledge">{t('rules.catKnowledge')}</option>
+              <option value="sales">{t('rules.catSales')}</option>
+              <option value="format">{t('rules.catFormat')}</option>
+              <option value="safety">{t('rules.catSafety')}</option>
             </select>
             <button
               onClick={handleAddRule}
@@ -1227,7 +1233,7 @@ function InstructionsSection() {
               className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50"
             >
               <Plus className="w-3.5 h-3.5" />
-              {addingRule ? '...' : 'Agregar'}
+              {addingRule ? '...' : t('rules.add')}
             </button>
           </div>
           {newRule.length > 400 && (
@@ -1239,7 +1245,7 @@ function InstructionsSection() {
       {/* Tips */}
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
         <h3 className="font-semibold text-blue-800 mb-3 flex items-center gap-2">
-          <Sparkles className="w-5 h-5" /> Tips para mejores instrucciones
+          <Sparkles className="w-5 h-5" /> {t('instructions.tipsTitle')}
         </h3>
         <ul className="space-y-2 text-sm text-blue-700">
           <li className="flex items-start gap-2">
@@ -1271,7 +1277,7 @@ function InstructionsSection() {
           <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
               <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                <Code className="w-5 h-5 text-indigo-500" /> Prompt Actual
+                <Code className="w-5 h-5 text-indigo-500" /> {t('instructions.currentPrompt')}
               </h2>
               <button onClick={() => setShowPrompt(false)} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg">
                 <X className="w-5 h-5" />
@@ -1312,7 +1318,7 @@ function InstructionsSection() {
                   )}
                 </>
               ) : (
-                <p className="text-gray-400 text-center py-8">Error cargando prompt</p>
+                <p className="text-gray-400 text-center py-8">{t('instructions.errorLoadingPrompt')}</p>
               )}
             </div>
           </div>
@@ -1330,6 +1336,7 @@ function InstructionsSection() {
 // =============================================
 
 function BotConversationsSection() {
+  const { t } = useTranslation('learning')
   const [conversations, setConversations] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedSession, setSelectedSession] = useState(null)
@@ -1407,7 +1414,7 @@ function BotConversationsSection() {
           onClick={() => { setSelectedSession(null); setMessages([]) }}
           className="flex items-center gap-2 text-sm text-gray-600 hover:text-indigo-600 font-medium transition"
         >
-          <ArrowLeft className="w-4 h-4" /> Volver a conversaciones
+          <ArrowLeft className="w-4 h-4" /> {t('conversations.backToList')}
         </button>
 
         {error && (
@@ -1421,7 +1428,7 @@ function BotConversationsSection() {
 
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
           <h3 className="font-semibold text-gray-800 mb-4 text-sm">
-            Sesion #{selectedSession} — {messages.length} mensajes
+            {t('conversations.session')} #{selectedSession} — {messages.length} {t('conversations.messages')}
           </h3>
 
           {loadingMessages ? (
@@ -1452,12 +1459,12 @@ function BotConversationsSection() {
                           onClick={() => { setCorrecting(msg.id); setCorrectedAnswer('') }}
                           className="text-[10px] font-semibold text-purple-700 hover:text-purple-900 flex items-center gap-0.5"
                         >
-                          <PenLine className="w-3 h-3" /> Corregir
+                          <PenLine className="w-3 h-3" /> {t('conversations.correct')}
                         </button>
                       )}
                       {msg.status === 'corrected' && (
                         <span className="text-[10px] font-semibold text-green-700 flex items-center gap-0.5">
-                          <Check className="w-3 h-3" /> Corregido
+                          <Check className="w-3 h-3" /> {t('conversations.corrected')}
                         </span>
                       )}
                     </div>
@@ -1465,13 +1472,13 @@ function BotConversationsSection() {
                     {/* Inline correction form */}
                     {correcting === msg.id && (
                       <div className="mt-3 pt-3 border-t border-purple-300">
-                        <label className="block text-xs font-semibold text-purple-700 mb-1">Respuesta correcta:</label>
+                        <label className="block text-xs font-semibold text-purple-700 mb-1">{t('conversations.correctAnswer')}:</label>
                         <textarea
                           value={correctedAnswer}
                           onChange={e => setCorrectedAnswer(e.target.value)}
                           rows={3}
                           className="w-full px-3 py-2 border border-purple-300 rounded-lg text-sm text-gray-800 bg-white focus:ring-2 focus:ring-purple-500"
-                          placeholder="Escribe la respuesta correcta que deberia dar el bot..."
+                          placeholder={t('conversations.correctPlaceholder')}
                           autoFocus
                         />
                         <div className="flex gap-2 mt-2">
@@ -1480,13 +1487,13 @@ function BotConversationsSection() {
                             disabled={submitting || !correctedAnswer.trim()}
                             className="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-medium disabled:opacity-50 hover:bg-purple-700"
                           >
-                            {submitting ? 'Guardando...' : 'Guardar Correccion'}
+                            {submitting ? t('conversations.saving') : t('conversations.saveCorrection')}
                           </button>
                           <button
                             onClick={() => setCorrecting(null)}
                             className="px-3 py-1.5 border border-purple-300 text-purple-700 rounded-lg text-xs hover:bg-purple-50"
                           >
-                            Cancelar
+                            {t('common:actions.cancel')}
                           </button>
                         </div>
                       </div>
@@ -1511,9 +1518,9 @@ function BotConversationsSection() {
             <MessageSquare className="w-8 h-8" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold">Conversaciones del Bot</h2>
+            <h2 className="text-2xl font-bold">{t('conversations.title')}</h2>
             <p className="text-purple-200 text-sm mt-1">
-              Revisa y corrige las respuestas automaticas de la IA
+              {t('conversations.subtitle')}
             </p>
           </div>
         </div>
@@ -1526,20 +1533,20 @@ function BotConversationsSection() {
       {conversations.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-12 text-center">
           <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-400">Aun no hay conversaciones donde el bot haya respondido</p>
-          <p className="text-gray-400 text-sm mt-1">Cuando la IA responda mensajes, apareceran aqui</p>
+          <p className="text-gray-400">{t('conversations.noConversations')}</p>
+          <p className="text-gray-400 text-sm mt-1">{t('conversations.noConversationsHint')}</p>
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Sesion</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Telefono</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Msgs IA</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">{t('conversations.session')}</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">{t('conversations.phone')}</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">{t('conversations.aiMsgs')}</th>
                 <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Total</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Ultimo mensaje</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Fecha</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">{t('conversations.lastMessage')}</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">{t('conversations.date')}</th>
                 <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase"></th>
               </tr>
             </thead>
@@ -1557,7 +1564,7 @@ function BotConversationsSection() {
                   <td className="px-4 py-3 text-sm text-gray-500 max-w-[200px] truncate">{conv.last_message}</td>
                   <td className="px-4 py-3 text-sm text-gray-400">
                     {conv.last_message_at
-                      ? formatDistanceToNow(new Date(conv.last_message_at), { addSuffix: true, locale: es })
+                      ? formatDistanceToNow(new Date(conv.last_message_at), { addSuffix: true, locale: getDateLocale() })
                       : '-'}
                   </td>
                   <td className="px-4 py-3 text-right">
@@ -1578,6 +1585,7 @@ function BotConversationsSection() {
 // =============================================
 
 export default function LearningPage() {
+  const { t } = useTranslation('learning')
   const [activeTab, setActiveTab] = useState('brain')
   const [stats, setStats] = useState(null)
 
@@ -1591,8 +1599,8 @@ export default function LearningPage() {
     <div className="p-8">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Cerebro IA - Aprendizaje</h1>
-        <p className="text-gray-500 mt-1">Sistema de conocimiento adquirido por la IA</p>
+        <h1 className="text-2xl font-bold text-gray-800">{t('pageTitle')}</h1>
+        <p className="text-gray-500 mt-1">{t('pageSubtitle')}</p>
       </div>
 
       {/* Tabs */}
@@ -1610,7 +1618,7 @@ export default function LearningPage() {
               }`}
             >
               <Icon className="w-4 h-4" />
-              {tab.label}
+              {t(tab.labelKey)}
             </button>
           )
         })}

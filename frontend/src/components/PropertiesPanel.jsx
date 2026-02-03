@@ -1,23 +1,25 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useFlowStore } from '../store/flowStore'
 import { useAuthStore } from '../store/authStore'
 
 const INTENT_OPTIONS = [
-  { value: 'sales', label: 'Ventas', color: '#10b981' },
-  { value: 'support', label: 'Soporte', color: '#3b82f6' },
-  { value: 'complaint', label: 'Quejas', color: '#ef4444' },
-  { value: 'info', label: 'Información', color: '#8b5cf6' },
-  { value: 'greeting', label: 'Saludo', color: '#f59e0b' }
+  { value: 'sales', labelKey: 'properties.intentsOptions.sales', color: '#10b981' },
+  { value: 'support', labelKey: 'properties.intentsOptions.support', color: '#3b82f6' },
+  { value: 'complaint', labelKey: 'properties.intentsOptions.complaints', color: '#ef4444' },
+  { value: 'info', labelKey: 'properties.intentsOptions.info', color: '#8b5cf6' },
+  { value: 'greeting', labelKey: 'properties.intentsOptions.greeting', color: '#f59e0b' }
 ]
 
 const URGENCY_OPTIONS = [
-  { value: 'low', label: 'Baja' },
-  { value: 'medium', label: 'Media' },
-  { value: 'high', label: 'Alta' },
-  { value: 'critical', label: 'Crítica' }
+  { value: 'low', labelKey: 'properties.urgencyOptions.low' },
+  { value: 'medium', labelKey: 'properties.urgencyOptions.medium' },
+  { value: 'high', labelKey: 'properties.urgencyOptions.high' },
+  { value: 'critical', labelKey: 'properties.urgencyOptions.critical' }
 ]
 
 export default function PropertiesPanel() {
+  const { t } = useTranslation('flowBuilder')
   const { selectedNode, updateNodeData, deleteNode, isPropertiesOpen, toggleProperties } = useFlowStore()
   const [localData, setLocalData] = useState({})
   const [triggerConfig, setTriggerConfig] = useState({ type: 'keyword', keywords: [], conditions: {} })
@@ -59,7 +61,7 @@ export default function PropertiesPanel() {
   }
 
   const addOption = () => {
-    const options = [...(localData.options || []), { label: 'Nueva opción', value: '' }]
+    const options = [...(localData.options || []), { label: t('properties.newOption'), value: '' }]
     handleChange('options', options)
   }
 
@@ -136,7 +138,7 @@ export default function PropertiesPanel() {
         marginBottom: '16px'
       }}>
         <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>
-          Propiedades
+          {t('properties.title')}
         </h3>
         <button
           onClick={toggleProperties}
@@ -159,7 +161,7 @@ export default function PropertiesPanel() {
       {/* Label */}
       <div style={{ marginBottom: '16px' }}>
         <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '4px' }}>
-          Etiqueta
+          {t('properties.label')}
         </label>
         <input
           type="text"
@@ -185,19 +187,19 @@ export default function PropertiesPanel() {
           border: '1px solid #e2e8f0'
         }}>
           <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '12px', color: '#475569' }}>
-            Configuración del Trigger
+            {t('properties.triggerConfig')}
           </label>
 
           {/* Trigger Type */}
           <div style={{ marginBottom: '12px' }}>
             <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '6px', color: '#64748b' }}>
-              Tipo de activación
+              {t('properties.triggerType')}
             </label>
             <div style={{ display: 'flex', gap: '6px' }}>
               {[
-                { value: 'keyword', label: 'Palabras clave' },
-                { value: 'classification', label: 'Clasificación' },
-                { value: 'always', label: 'Siempre' }
+                { value: 'keyword', labelKey: 'properties.keywords' },
+                { value: 'classification', labelKey: 'properties.classification' },
+                { value: 'always', labelKey: 'properties.always' }
               ].map(opt => (
                 <button
                   key={opt.value}
@@ -214,7 +216,7 @@ export default function PropertiesPanel() {
                     fontWeight: triggerConfig.type === opt.value ? 600 : 400
                   }}
                 >
-                  {opt.label}
+                  {t(opt.labelKey)}
                 </button>
               ))}
             </div>
@@ -224,13 +226,13 @@ export default function PropertiesPanel() {
           {triggerConfig.type === 'keyword' && (
             <div style={{ marginBottom: '12px' }}>
               <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#64748b' }}>
-                Palabras clave (separadas por coma)
+                {t('properties.keywordsLabel')}
               </label>
               <input
                 type="text"
                 value={(triggerConfig.keywords || []).join(', ')}
                 onChange={(e) => handleKeywordsChange(e.target.value)}
-                placeholder="precio, costo, cotizar, cuanto"
+                placeholder={t('properties.keywordsPlaceholder')}
                 style={{
                   width: '100%',
                   padding: '8px',
@@ -240,7 +242,7 @@ export default function PropertiesPanel() {
                 }}
               />
               <p style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>
-                El flujo se activa si el mensaje contiene alguna de estas palabras
+                {t('properties.keywordsHelp')}
               </p>
             </div>
           )}
@@ -251,7 +253,7 @@ export default function PropertiesPanel() {
               {/* Intents */}
               <div style={{ marginBottom: '12px' }}>
                 <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '6px', color: '#64748b' }}>
-                  Intenciones del mensaje
+                  {t('properties.intents')}
                 </label>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {INTENT_OPTIONS.map(intent => {
@@ -271,7 +273,7 @@ export default function PropertiesPanel() {
                           fontWeight: isSelected ? 600 : 400
                         }}
                       >
-                        {isSelected && '✓ '}{intent.label}
+                        {isSelected && '✓ '}{t(intent.labelKey)}
                       </button>
                     )
                   })}
@@ -281,7 +283,7 @@ export default function PropertiesPanel() {
               {/* Urgency */}
               <div style={{ marginBottom: '12px' }}>
                 <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#64748b' }}>
-                  Urgencia mínima
+                  {t('properties.minUrgency')}
                 </label>
                 <select
                   value={triggerConfig.conditions?.urgency || ''}
@@ -294,9 +296,9 @@ export default function PropertiesPanel() {
                     fontSize: '12px'
                   }}
                 >
-                  <option value="">Cualquiera</option>
+                  <option value="">{t('properties.anyUrgency')}</option>
                   {URGENCY_OPTIONS.map(u => (
-                    <option key={u.value} value={u.value}>{u.label}</option>
+                    <option key={u.value} value={u.value}>{t(u.labelKey)}</option>
                   ))}
                 </select>
               </div>
@@ -304,7 +306,7 @@ export default function PropertiesPanel() {
               {/* Lead Score */}
               <div>
                 <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#64748b' }}>
-                  Lead score mínimo
+                  {t('properties.minLeadScore')}
                 </label>
                 <input
                   type="number"
@@ -321,7 +323,7 @@ export default function PropertiesPanel() {
                   }}
                 />
                 <p style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>
-                  Solo activa si el lead tiene este puntaje o más (0-100)
+                  {t('properties.leadScoreHelp')}
                 </p>
               </div>
             </>
@@ -336,8 +338,7 @@ export default function PropertiesPanel() {
               border: '1px solid #fcd34d'
             }}>
               <p style={{ fontSize: '11px', color: '#92400e', margin: 0 }}>
-                ⚠️ Este flujo se activará para TODOS los mensajes entrantes que no coincidan con otros flujos.
-                Úsalo como flujo por defecto.
+                ⚠️ {t('properties.alwaysWarning')}
               </p>
             </div>
           )}
@@ -348,7 +349,7 @@ export default function PropertiesPanel() {
       {['message', 'question', 'transfer'].includes(selectedNode.type) && (
         <div style={{ marginBottom: '16px' }}>
           <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '4px' }}>
-            Contenido del mensaje
+            {t('properties.messageContent')}
           </label>
           <textarea
             value={localData.content || ''}
@@ -362,10 +363,10 @@ export default function PropertiesPanel() {
               fontSize: '13px',
               resize: 'vertical'
             }}
-            placeholder="Escribe el mensaje..."
+            placeholder={t('properties.messagePlaceholder')}
           />
           <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
-            Usa {'{{variable}}'} para insertar variables
+            {t('properties.variableHelp')}
           </p>
         </div>
       )}
@@ -374,7 +375,7 @@ export default function PropertiesPanel() {
       {selectedNode.type === 'transfer' && (
         <div style={{ marginBottom: '16px' }}>
           <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '4px' }}>
-            Departamento destino
+            {t('properties.targetDepartment')}
           </label>
           <select
             value={localData.targetDepartmentId || ''}
@@ -387,7 +388,7 @@ export default function PropertiesPanel() {
               fontSize: '13px'
             }}
           >
-            <option value="">Auto (detectar por intent)</option>
+            <option value="">{t('properties.autoDepartment')}</option>
             {departments.filter(d => d.active).map(d => (
               <option key={d.id} value={d.id}>
                 {d.display_name || d.name}
@@ -395,7 +396,7 @@ export default function PropertiesPanel() {
             ))}
           </select>
           <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
-            Si seleccionas "Auto", se usará el intent detectado para asignar departamento
+            {t('properties.departmentHelp')}
           </p>
         </div>
       )}
@@ -404,7 +405,7 @@ export default function PropertiesPanel() {
       {selectedNode.type === 'question' && (
         <div style={{ marginBottom: '16px' }}>
           <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '4px' }}>
-            Guardar respuesta en variable
+            {t('properties.saveVariable')}
           </label>
           <input
             type="text"
@@ -426,7 +427,7 @@ export default function PropertiesPanel() {
       {selectedNode.type === 'question' && (
         <div style={{ marginBottom: '16px' }}>
           <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '8px' }}>
-            Opciones de respuesta
+            {t('properties.responseOptions')}
           </label>
           {(localData.options || []).map((opt, idx) => (
             <div key={idx} style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
@@ -434,7 +435,7 @@ export default function PropertiesPanel() {
                 type="text"
                 value={opt.label}
                 onChange={(e) => handleOptionChange(idx, 'label', e.target.value)}
-                placeholder="Texto"
+                placeholder={t('properties.optionText')}
                 style={{
                   flex: 1,
                   padding: '6px',
@@ -447,7 +448,7 @@ export default function PropertiesPanel() {
                 type="text"
                 value={opt.value}
                 onChange={(e) => handleOptionChange(idx, 'value', e.target.value)}
-                placeholder="Valor"
+                placeholder={t('properties.optionValue')}
                 style={{
                   width: '80px',
                   padding: '6px',
@@ -483,7 +484,7 @@ export default function PropertiesPanel() {
               fontSize: '12px'
             }}
           >
-            + Agregar opción
+            {t('properties.addOption')}
           </button>
         </div>
       )}
@@ -492,7 +493,7 @@ export default function PropertiesPanel() {
       {selectedNode.type === 'action' && (
         <div style={{ marginBottom: '16px' }}>
           <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, marginBottom: '4px' }}>
-            Tipo de acción
+            {t('properties.actionType')}
           </label>
           <select
             value={localData.action || ''}
@@ -505,13 +506,13 @@ export default function PropertiesPanel() {
               fontSize: '13px'
             }}
           >
-            <option value="">Selecciona...</option>
-            <option value="notify_sales">Notificar a ventas</option>
-            <option value="create_ticket">Crear ticket</option>
-            <option value="save_lead">Guardar lead</option>
-            <option value="send_email">Enviar email</option>
-            <option value="webhook">Llamar webhook</option>
-            <option value="search_faq">Buscar en FAQ</option>
+            <option value="">{t('properties.selectAction')}</option>
+            <option value="notify_sales">{t('properties.notifySales')}</option>
+            <option value="create_ticket">{t('properties.createTicket')}</option>
+            <option value="save_lead">{t('properties.saveLead')}</option>
+            <option value="send_email">{t('properties.sendEmail')}</option>
+            <option value="webhook">{t('properties.callWebhook')}</option>
+            <option value="search_faq">{t('properties.searchFaq')}</option>
           </select>
         </div>
       )}
@@ -526,13 +527,13 @@ export default function PropertiesPanel() {
           border: '1px solid #c4b5fd'
         }}>
           <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '12px', color: '#5b21b6' }}>
-            🧠 Configuración de IA
+            🧠 {t('properties.aiConfig')}
           </label>
 
           {/* System prompt */}
           <div style={{ marginBottom: '12px' }}>
             <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
-              Prompt del sistema
+              {t('properties.systemPrompt')}
             </label>
             <textarea
               value={localData.system_prompt || ''}
@@ -546,14 +547,14 @@ export default function PropertiesPanel() {
                 fontSize: '12px',
                 resize: 'vertical'
               }}
-              placeholder="Eres un asistente de ventas amable y profesional..."
+              placeholder={t('properties.systemPromptPlaceholder')}
             />
           </div>
 
           {/* User prompt */}
           <div style={{ marginBottom: '12px' }}>
             <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
-              Prompt del usuario
+              {t('properties.userPrompt')}
             </label>
             <textarea
               value={localData.user_prompt || ''}
@@ -567,17 +568,17 @@ export default function PropertiesPanel() {
                 fontSize: '12px',
                 resize: 'vertical'
               }}
-              placeholder="El cliente pregunta: {{initial_message}}"
+              placeholder={t('properties.userPromptPlaceholder')}
             />
             <p style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>
-              Usa {'{{variable}}'} para insertar datos dinámicos
+              {t('properties.dynamicVariableHelp')}
             </p>
           </div>
 
           {/* Model selection */}
           <div style={{ marginBottom: '12px' }}>
             <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
-              Modelo
+              {t('properties.model')}
             </label>
             <select
               value={localData.model || 'gpt-4o-mini'}
@@ -590,9 +591,9 @@ export default function PropertiesPanel() {
                 fontSize: '12px'
               }}
             >
-              <option value="gpt-4o-mini">GPT-4o Mini (rápido)</option>
-              <option value="gpt-4o">GPT-4o (preciso)</option>
-              <option value="gpt-4-turbo">GPT-4 Turbo</option>
+              <option value="gpt-4o-mini">{t('properties.modelMini')}</option>
+              <option value="gpt-4o">{t('properties.modelGpt4o')}</option>
+              <option value="gpt-4-turbo">{t('properties.modelGpt4Turbo')}</option>
             </select>
           </div>
 
@@ -600,7 +601,7 @@ export default function PropertiesPanel() {
           <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
             <div style={{ flex: 1 }}>
               <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
-                Temperatura
+                {t('properties.temperature')}
               </label>
               <input
                 type="number"
@@ -620,7 +621,7 @@ export default function PropertiesPanel() {
             </div>
             <div style={{ flex: 1 }}>
               <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
-                Max tokens
+                {t('properties.maxTokens')}
               </label>
               <input
                 type="number"
@@ -643,7 +644,7 @@ export default function PropertiesPanel() {
           {/* Variable to save response */}
           <div>
             <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
-              Guardar respuesta en variable (opcional)
+              {t('properties.saveResponseVariable')}
             </label>
             <input
               type="text"
@@ -672,13 +673,13 @@ export default function PropertiesPanel() {
           border: '1px solid #fed7aa'
         }}>
           <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '12px', color: '#c2410c' }}>
-            🌐 Configuración de Webhook
+            🌐 {t('properties.webhookConfig')}
           </label>
 
           {/* URL */}
           <div style={{ marginBottom: '12px' }}>
             <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
-              URL del endpoint
+              {t('properties.endpointUrl')}
             </label>
             <input
               type="text"
@@ -691,14 +692,14 @@ export default function PropertiesPanel() {
                 borderRadius: '6px',
                 fontSize: '12px'
               }}
-              placeholder="https://api.ejemplo.com/endpoint"
+              placeholder={t('properties.endpointPlaceholder')}
             />
           </div>
 
           {/* Method */}
           <div style={{ marginBottom: '12px' }}>
             <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
-              Método HTTP
+              {t('properties.httpMethod')}
             </label>
             <select
               value={localData.method || 'POST'}
@@ -722,7 +723,7 @@ export default function PropertiesPanel() {
           {/* Headers */}
           <div style={{ marginBottom: '12px' }}>
             <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
-              Headers (JSON)
+              {t('properties.headers')}
             </label>
             <textarea
               value={localData.headers || '{\n  "Content-Type": "application/json"\n}'}
@@ -743,7 +744,7 @@ export default function PropertiesPanel() {
           {/* Body */}
           <div style={{ marginBottom: '12px' }}>
             <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
-              Body (JSON) - Usa {'{{variable}}'} para datos dinámicos
+              {t('properties.body')}
             </label>
             <textarea
               value={localData.body || '{\n  "phone": "{{phone}}",\n  "message": "{{initial_message}}"\n}'}
@@ -764,7 +765,7 @@ export default function PropertiesPanel() {
           {/* Timeout */}
           <div style={{ marginBottom: '12px' }}>
             <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
-              Timeout (ms)
+              {t('properties.timeout')}
             </label>
             <input
               type="number"
@@ -786,7 +787,7 @@ export default function PropertiesPanel() {
           {/* Variable to save response */}
           <div>
             <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
-              Guardar respuesta en variable
+              {t('properties.webhookSaveVariable')}
             </label>
             <input
               type="text"
@@ -815,13 +816,13 @@ export default function PropertiesPanel() {
           border: '1px solid #cbd5e1'
         }}>
           <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '12px', color: '#475569' }}>
-            ⏱️ Configuración de Espera
+            ⏱️ {t('properties.delayConfig')}
           </label>
 
           {/* Seconds */}
           <div style={{ marginBottom: '12px' }}>
             <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginBottom: '4px', color: '#6b7280' }}>
-              Segundos de espera
+              {t('properties.delaySeconds')}
             </label>
             <input
               type="number"
@@ -839,7 +840,7 @@ export default function PropertiesPanel() {
               }}
             />
             <p style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>
-              Entre 1 y 60 segundos. Recomendado: 2-5 seg para parecer más humano.
+              {t('properties.delayHelp')}
             </p>
           </div>
 
@@ -853,7 +854,7 @@ export default function PropertiesPanel() {
                 style={{ width: '16px', height: '16px' }}
               />
               <span style={{ fontSize: '12px', color: '#374151' }}>
-                Mostrar "escribiendo..." mientras espera
+                {t('properties.showTyping')}
               </span>
             </label>
           </div>
@@ -876,7 +877,7 @@ export default function PropertiesPanel() {
             fontSize: '13px'
           }}
         >
-          🗑️ Eliminar nodo
+          🗑️ {t('properties.deleteNode')}
         </button>
       </div>
     </div>

@@ -1,0 +1,41 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "conversations": "Conversaciones",
+    "agents": "Agentes",
+    "departments": "Departamentos",
+    "flows": "Flujos",
+    "logs": "Logs",
+    "leads": "Leads",
+    "analytics": "Analytics",
+    "monitor": "Monitor",
+    "learning": "Cerebro IA"
+  },
+  "roles": {
+    "supervisor": "Supervisor",
+    "agent": "Agente"
+  },
+  "actions": {
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "delete": "Eliminar",
+    "edit": "Editar",
+    "close": "Cerrar",
+    "retry": "Reintentar",
+    "confirm": "Confirmar",
+    "apply": "Aplicar",
+    "refresh": "Actualizar",
+    "create": "Crear",
+    "back": "Volver"
+  },
+  "status": {
+    "active": "Activo",
+    "inactive": "Inactivo",
+    "loading": "Cargando..."
+  },
+  "logout": "Cerrar sesión",
+  "platformName": "Chat Platform",
+  "companyName": "Respaldos Chile",
+  "language": "Idioma",
+  "noDepartment": "Sin departamento"
+}

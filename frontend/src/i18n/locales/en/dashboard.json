@@ -1,0 +1,22 @@
+{
+  "title": "Dashboard",
+  "subtitle": "Your WhatsApp chatbot overview",
+  "stats": {
+    "conversations": "Conversations",
+    "totalActive": "Total active",
+    "uniqueUsers": "Unique users",
+    "last30Days": "Last 30 days",
+    "interactions": "Interactions",
+    "processedByBot": "Processed by bot",
+    "confidence": "Confidence",
+    "avgClassification": "Avg. classification"
+  },
+  "recentConversations": "Recent Conversations",
+  "viewAll": "View all",
+  "noConversationsYet": "No conversations yet",
+  "noMessages": "No messages",
+  "flowEditor": "Flow Editor",
+  "flowEditorDesc": "Create and edit conversational flows visually",
+  "viewConversations": "View Conversations",
+  "viewConversationsDesc": "Reply to your customers in real time"
+}

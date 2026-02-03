@@ -1,7 +1,9 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Check, X } from 'lucide-react'
 
 export default function CorrectionForm({ onSubmit, onCancel, submitting }) {
+  const { t } = useTranslation('learning')
   const [correctionType, setCorrectionType] = useState('factual')
   const [correctedAnswer, setCorrectedAnswer] = useState('')
   const [behavioralRule, setBehavioralRule] = useState('')
@@ -32,7 +34,7 @@ export default function CorrectionForm({ onSubmit, onCancel, submitting }) {
               : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
           }`}
         >
-          Respuesta incorrecta
+          {t('probador.factualCorrection')}
         </button>
         <button
           onClick={() => setCorrectionType('behavioral')}
@@ -42,7 +44,7 @@ export default function CorrectionForm({ onSubmit, onCancel, submitting }) {
               : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
           }`}
         >
-          Regla de comportamiento
+          {t('probador.behavioralCorrection')}
         </button>
       </div>
 
@@ -54,11 +56,11 @@ export default function CorrectionForm({ onSubmit, onCancel, submitting }) {
             onChange={e => setCorrectedAnswer(e.target.value)}
             rows={3}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-800 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-            placeholder="Cual es la respuesta correcta?"
+            placeholder={t('probador.factualPlaceholder')}
             autoFocus
           />
           <p className="text-[10px] text-gray-400 mt-1">
-            Esto creara un nuevo par Q&A aprobado
+            {t('probador.factualHint')}
           </p>
         </div>
       )}
@@ -71,11 +73,11 @@ export default function CorrectionForm({ onSubmit, onCancel, submitting }) {
             onChange={e => setBehavioralRule(e.target.value)}
             rows={3}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-800 bg-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500 resize-none"
-            placeholder="Ej: Nunca ofrezcas descuentos sin autorizacion"
+            placeholder={t('probador.behavioralPlaceholder')}
             autoFocus
           />
           <p className="text-[10px] text-gray-400 mt-1">
-            Esta regla se agregara a las instrucciones permanentes
+            {t('probador.behavioralHint')}
           </p>
         </div>
       )}
@@ -92,14 +94,14 @@ export default function CorrectionForm({ onSubmit, onCancel, submitting }) {
           }`}
         >
           <Check className="w-3 h-3" />
-          {submitting ? 'Guardando...' : 'Guardar'}
+          {submitting ? t('probador.savingShort') : t('probador.save')}
         </button>
         <button
           onClick={onCancel}
           className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 text-gray-600 rounded-lg text-xs hover:bg-gray-50 transition"
         >
           <X className="w-3 h-3" />
-          Cancelar
+          {t('probador.cancel')}
         </button>
       </div>
     </div>

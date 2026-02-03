@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { X, Play, Zap, RefreshCw } from 'lucide-react'
 import { simulateChatMessage, quickCorrectFromTester, createBehavioralRule } from '../../api/learning'
 import ChatPanel from './ChatPanel'
 import RayosXPanel from './RayosXPanel'
 
 export default function ProbadorDrawer({ show, onClose }) {
+  const { t } = useTranslation('learning')
   const [showRayosX, setShowRayosX] = useState(false)
   const [activeXrayTab, setActiveXrayTab] = useState('pipeline')
   const [testerMessages, setTesterMessages] = useState([])
@@ -50,7 +52,7 @@ export default function ProbadorDrawer({ show, onClose }) {
       } else {
         setTesterMessages(prev => [
           ...prev,
-          { role: 'bot', text: '(sin respuesta del bot)', time: new Date(), trace }
+          { role: 'bot', text: t('probador.noResponse'), time: new Date(), trace }
         ])
       }
       if (trace) {
@@ -65,7 +67,7 @@ export default function ProbadorDrawer({ show, onClose }) {
           behavioralRules: prompt.behavioralRulesCount || 0,
           recentCorrections: prompt.recentCorrectionsCount || 0,
           instructionsChars: prompt.totalSystemPromptChars || 0,
-          model: openaiCall.model || 'unknown',
+          model: openaiCall.model || t('probador.unknownModel'),
           fidelityLevel: prompt.fidelityLevel || 'enhanced',
           temperature: openaiCall.temperature || 0.5
         })
@@ -130,7 +132,7 @@ export default function ProbadorDrawer({ show, onClose }) {
       console.error('Error submitting correction:', err)
       setTesterMessages(prev => [
         ...prev,
-        { role: 'system', text: 'Error al guardar correccion: ' + err.message, time: new Date() }
+        { role: 'system', text: t('probador.errorSavingCorrection') + err.message, time: new Date() }
       ])
     } finally {
       setCorrectionSubmitting(false)
@@ -169,8 +171,8 @@ export default function ProbadorDrawer({ show, onClose }) {
           <div className="flex items-center gap-3 text-white">
             <Play className="w-5 h-5" />
             <div>
-              <h3 className="font-bold text-sm">Probador IA</h3>
-              <p className="text-[10px] text-purple-200">Prueba tu prompt en tiempo real</p>
+              <h3 className="font-bold text-sm">{t('probador.title')}</h3>
+              <p className="text-[10px] text-purple-200">{t('probador.subtitle')}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -184,7 +186,7 @@ export default function ProbadorDrawer({ show, onClose }) {
               }`}
             >
               <Zap className="w-3.5 h-3.5" />
-              Rayos X
+              {t('probador.rayosX')}
             </button>
             <button
               onClick={resetTester}
@@ -192,7 +194,7 @@ export default function ProbadorDrawer({ show, onClose }) {
             >
               <span className="flex items-center gap-1">
                 <RefreshCw className="w-3 h-3" />
-                Nueva conv.
+                {t('probador.newConversation')}
               </span>
             </button>
             <button onClick={onClose} className="p-1 text-white/70 hover:text-white rounded">

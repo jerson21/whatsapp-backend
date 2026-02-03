@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { MessageSquare, Send } from 'lucide-react'
 import MessageBubble from './MessageBubble'
 
@@ -15,6 +16,8 @@ export default function ChatPanel({
   onRetest,
   endRef
 }) {
+  const { t } = useTranslation('learning')
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -29,8 +32,8 @@ export default function ChatPanel({
         {messages.length === 0 && (
           <div className="text-center py-12">
             <MessageSquare className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-            <p className="text-sm text-gray-400">Escribe un mensaje para probar la IA</p>
-            <p className="text-xs text-gray-300 mt-1">Usa el mismo motor que WhatsApp real</p>
+            <p className="text-sm text-gray-400">{t('probador.emptyChat')}</p>
+            <p className="text-xs text-gray-300 mt-1">{t('probador.emptyChatSub')}</p>
           </div>
         )}
         {messages.map((msg, i) => (
@@ -68,7 +71,7 @@ export default function ChatPanel({
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Escribe un mensaje..."
+            placeholder={t('probador.inputPlaceholder')}
             className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
             disabled={loading}
             autoFocus

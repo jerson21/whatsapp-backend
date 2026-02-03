@@ -1,58 +1,60 @@
 import { useState } from 'react'
-
-const steps = [
-  {
-    title: '¡Bienvenido al Flow Builder!',
-    description: 'Crea flujos de conversación para tu chatbot de WhatsApp de forma visual, sin escribir código.',
-    icon: '🤖',
-    image: null
-  },
-  {
-    title: 'Arrastra nodos al canvas',
-    description: 'En la barra izquierda encontrarás los nodos disponibles. Arrástralos al canvas para construir tu flujo.',
-    icon: '👆',
-    tips: [
-      '💬 Mensaje: Envía un texto al usuario',
-      '❓ Pregunta: Espera una respuesta del usuario',
-      '🔀 Condición: Bifurca el flujo según una variable',
-      '⚙️ Acción: Ejecuta una acción (notificar, guardar, etc.)'
-    ]
-  },
-  {
-    title: 'Conecta los nodos',
-    description: 'Arrastra desde el punto verde (salida) de un nodo hasta el punto gris (entrada) de otro para conectarlos.',
-    icon: '🔗',
-    tips: [
-      'El flujo siempre empieza en el Trigger',
-      'Puedes tener múltiples caminos con Condiciones',
-      'Termina con un nodo Fin o Transferir'
-    ]
-  },
-  {
-    title: 'Configura cada nodo',
-    description: 'Haz clic en un nodo para ver sus propiedades a la derecha. Ahí puedes editar el contenido, opciones y variables.',
-    icon: '⚙️',
-    tips: [
-      'Usa {{variable}} para insertar datos dinámicos',
-      'Las preguntas guardan la respuesta en una variable',
-      'Las condiciones evalúan esas variables'
-    ]
-  },
-  {
-    title: '¡Guarda y activa!',
-    description: 'Cuando termines, guarda tu flujo y actívalo para que empiece a responder mensajes automáticamente.',
-    icon: '🚀',
-    tips: [
-      'Puedes tener varios flujos, pero solo algunos activos',
-      'Usa "Abrir" para cargar flujos guardados',
-      'Las plantillas te dan flujos de ejemplo para empezar'
-    ]
-  }
-]
+import { useTranslation } from 'react-i18next'
 
 export default function Onboarding({ onComplete }) {
+  const { t } = useTranslation('flowBuilder')
   const [currentStep, setCurrentStep] = useState(0)
   const [showTemplates, setShowTemplates] = useState(false)
+
+  const steps = [
+    {
+      title: t('onboarding.welcome'),
+      description: t('onboarding.welcomeDesc'),
+      icon: '🤖',
+      image: null
+    },
+    {
+      title: t('onboarding.dragNodes'),
+      description: t('onboarding.dragNodesDesc'),
+      icon: '👆',
+      tips: [
+        `💬 ${t('onboarding.tipMessage')}`,
+        `❓ ${t('onboarding.tipQuestion')}`,
+        `🔀 ${t('onboarding.tipCondition')}`,
+        `⚙️ ${t('onboarding.tipAction')}`
+      ]
+    },
+    {
+      title: t('onboarding.connectNodes'),
+      description: t('onboarding.connectNodesDesc'),
+      icon: '🔗',
+      tips: [
+        t('onboarding.tipFlowStartsTrigger'),
+        t('onboarding.tipMultiplePaths'),
+        t('onboarding.tipEndWithNode')
+      ]
+    },
+    {
+      title: t('onboarding.configureNodes'),
+      description: t('onboarding.configureNodesDesc'),
+      icon: '⚙️',
+      tips: [
+        t('onboarding.tipUseVariables'),
+        t('onboarding.tipQuestionsSave'),
+        t('onboarding.tipConditionsEvaluate')
+      ]
+    },
+    {
+      title: t('onboarding.saveAndActivate'),
+      description: t('onboarding.saveAndActivateDesc'),
+      icon: '🚀',
+      tips: [
+        t('onboarding.tipMultipleFlows'),
+        t('onboarding.tipUseOpen'),
+        t('onboarding.tipTemplates')
+      ]
+    }
+  ]
 
   const step = steps[currentStep]
   const isLast = currentStep === steps.length - 1
@@ -95,37 +97,37 @@ export default function Onboarding({ onComplete }) {
           width: '90%'
         }}>
           <h2 style={{ margin: '0 0 8px 0', fontSize: '24px' }}>
-            ¿Cómo quieres empezar?
+            {t('onboarding.howToStart')}
           </h2>
           <p style={{ color: '#6b7280', margin: '0 0 24px 0' }}>
-            Puedes empezar desde cero o usar una plantilla predefinida
+            {t('onboarding.templateSubtitle')}
           </p>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <TemplateCard
               icon="📄"
-              title="Empezar vacío"
-              description="Canvas en blanco para crear tu propio flujo"
+              title={t('onboarding.emptyTemplate')}
+              description={t('onboarding.emptyTemplateDesc')}
               onClick={() => handleSelectTemplate(null)}
             />
             <TemplateCard
               icon="💰"
-              title="Embudo de Ventas"
-              description="Califica leads y guíalos a la compra"
+              title={t('onboarding.salesFunnel')}
+              description={t('onboarding.salesFunnelDesc')}
               onClick={() => handleSelectTemplate('sales_funnel')}
               color="#25D366"
             />
             <TemplateCard
               icon="🎧"
-              title="Embudo de Soporte"
-              description="Resuelve dudas con FAQ y escala a humanos"
+              title={t('onboarding.supportFunnel')}
+              description={t('onboarding.supportFunnelDesc')}
               onClick={() => handleSelectTemplate('support_funnel')}
               color="#34B7F1"
             />
             <TemplateCard
               icon="📋"
-              title="Captura de Leads"
-              description="Recolecta información de contacto"
+              title={t('onboarding.leadCapture')}
+              description={t('onboarding.leadCaptureDesc')}
               onClick={() => handleSelectTemplate('lead_capture')}
               color="#f59e0b"
             />
@@ -144,7 +146,7 @@ export default function Onboarding({ onComplete }) {
               width: '100%'
             }}
           >
-            Saltar y empezar vacío →
+            {t('onboarding.skipAndStart')}
           </button>
         </div>
       </div>
@@ -234,7 +236,7 @@ export default function Onboarding({ onComplete }) {
               color: '#6b7280'
             }}
           >
-            Saltar
+            {t('onboarding.skip')}
           </button>
           <button
             onClick={handleNext}
@@ -249,7 +251,7 @@ export default function Onboarding({ onComplete }) {
               fontWeight: 500
             }}
           >
-            {isLast ? 'Empezar' : 'Siguiente'}
+            {isLast ? t('onboarding.start') : t('onboarding.next')}
           </button>
         </div>
       </div>

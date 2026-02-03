@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../store/authStore'
 import { Plus, Edit, Trash2, Tag } from 'lucide-react'
 
@@ -11,6 +12,7 @@ const getHeaders = () => {
 }
 
 export default function DepartmentManagement() {
+  const { t } = useTranslation('departments')
   const [departments, setDepartments] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -104,7 +106,7 @@ export default function DepartmentManagement() {
   }
 
   const handleDelete = async (dept) => {
-    if (!confirm(`Desactivar departamento "${dept.display_name}"?`)) return
+    if (!confirm(t('deleteConfirm', { name: dept.display_name }))) return
     try {
       const res = await fetch(`/api/departments/${dept.id}`, { method: 'DELETE', headers: getHeaders() })
       const data = await res.json()
@@ -126,11 +128,11 @@ export default function DepartmentManagement() {
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Departamentos</h1>
-          <p className="text-gray-500 text-sm mt-1">Organiza los agentes por area</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
+          <p className="text-gray-500 text-sm mt-1">{t('subtitle')}</p>
         </div>
         <button onClick={openCreate} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg transition font-medium">
-          <Plus className="w-4 h-4" /> Nuevo Departamento
+          <Plus className="w-4 h-4" /> {t('addDepartment')}
         </button>
       </div>
 
@@ -167,17 +169,17 @@ export default function DepartmentManagement() {
               </div>
 
               <div className="flex items-center gap-2 mb-3">
-                <span className="text-xs text-gray-500">{dept.agent_count || 0} agentes</span>
+                <span className="text-xs text-gray-500">{dept.agent_count || 0} {t('agents')}</span>
                 <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
                 <span className={`text-xs ${dept.active ? 'text-green-600' : 'text-gray-400'}`}>
-                  {dept.active ? 'Activo' : 'Inactivo'}
+                  {dept.active ? t('active') : t('inactive')}
                 </span>
               </div>
 
               {intents.length > 0 && (
                 <div>
                   <p className="text-xs text-gray-400 mb-1.5 flex items-center gap-1">
-                    <Tag className="w-3 h-3" /> Intents auto-asignados:
+                    <Tag className="w-3 h-3" /> {t('autoAssignIntents')}:
                   </p>
                   <div className="flex flex-wrap gap-1">
                     {intents.map((intent, i) => (
@@ -198,7 +200,7 @@ export default function DepartmentManagement() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-md p-6">
             <h2 className="text-lg font-bold text-gray-900 mb-4">
-              {editingDept ? 'Editar Departamento' : 'Nuevo Departamento'}
+              {editingDept ? t('editDepartment') : t('addDepartment')}
             </h2>
 
             {error && <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm mb-4">{error}</div>}
@@ -206,7 +208,7 @@ export default function DepartmentManagement() {
             <form onSubmit={handleSave} className="space-y-4">
               {!editingDept && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Identificador (slug)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('slug')}</label>
                   <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" required
                     placeholder="ej: ventas, soporte" />
@@ -214,14 +216,14 @@ export default function DepartmentManagement() {
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre visible</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('displayName')}</label>
                 <input type="text" value={form.displayName} onChange={e => setForm({ ...form, displayName: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" required
                   placeholder="ej: Ventas, Soporte Tecnico" />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('color')}</label>
                 <div className="flex gap-2">
                   {COLORS.map(c => (
                     <button key={c} type="button" onClick={() => setForm({ ...form, color: c })}
@@ -232,7 +234,7 @@ export default function DepartmentManagement() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Icono</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('icon')}</label>
                 <select value={form.icon} onChange={e => setForm({ ...form, icon: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
                   {ICONS.map(icon => (
@@ -243,25 +245,25 @@ export default function DepartmentManagement() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Intents para auto-asignacion
+                  {t('autoAssignIntents')}
                 </label>
                 <input type="text" value={form.autoAssignIntents}
                   onChange={e => setForm({ ...form, autoAssignIntents: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
                   placeholder="ventas, comprar, precio (separados por coma)" />
                 <p className="text-xs text-gray-400 mt-1">
-                  Cuando el chatbot detecta estos intents, asigna automaticamente a este departamento.
+                  {t('autoAssignHint')}
                 </p>
               </div>
 
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setShowModal(false)}
                   className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">
-                  Cancelar
+                  {t('common:actions.cancel')}
                 </button>
                 <button type="submit" disabled={saving}
                   className="flex-1 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg transition disabled:opacity-50">
-                  {saving ? 'Guardando...' : (editingDept ? 'Guardar' : 'Crear')}
+                  {saving ? t('saving') : (editingDept ? t('common:actions.save') : t('common:actions.create'))}
                 </button>
               </div>
             </form>

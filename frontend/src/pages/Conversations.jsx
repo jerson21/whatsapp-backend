@@ -7,8 +7,9 @@ import {
   markAsRead
 } from '../api/conversations'
 import { useAuthStore } from '../store/authStore'
+import { useTranslation } from 'react-i18next'
 import { formatDistanceToNow, format } from 'date-fns'
-import { es } from 'date-fns/locale'
+import { getDateLocale } from '../i18n/dateLocale'
 import {
   Search,
   Send,
@@ -113,14 +114,8 @@ function getInitials(name, phone) {
   return phone.slice(-2)
 }
 
-const FILTER_TABS = [
-  { key: 'mine', label: 'Mis Chats', icon: User },
-  { key: 'department', label: 'Departamento', icon: Building2 },
-  { key: 'unassigned', label: 'Sin Asignar', icon: Inbox },
-  { key: 'all', label: 'Todos', icon: Filter }
-]
-
 export default function Conversations() {
+  const { t } = useTranslation('conversations')
   const [searchParams, setSearchParams] = useSearchParams()
   const [conversations, setConversations] = useState([])
   const [selectedPhone, setSelectedPhone] = useState(searchParams.get('phone') || null)
@@ -129,7 +124,7 @@ export default function Conversations() {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [search, setSearch] = useState('')
-  const [channelFilter, setChannelFilter] = useState('all') // 'all' | 'whatsapp' | 'instagram' | 'messenger'
+  const [channelFilter, setChannelFilter] = useState('all')
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [showTransferModal, setShowTransferModal] = useState(false)
   const messagesEndRef = useRef(null)
@@ -138,23 +133,32 @@ export default function Conversations() {
   const agent = useAuthStore((s) => s.agent)
   const isSupervisor = agent?.role === 'supervisor'
 
-  // Supervisores ven todo por defecto, agentes ven sus chats
   const [activeFilter, setActiveFilter] = useState(isSupervisor ? 'all' : 'mine')
   const activeFilterRef = useRef(activeFilter)
   activeFilterRef.current = activeFilter
 
-  // Obtener conversación seleccionada
   const selectedConversation = conversations.find(c => c.phone === selectedPhone)
   const selectedPhoneRef = useRef(selectedPhone)
   selectedPhoneRef.current = selectedPhone
 
-  // Socket global del dashboard (un solo socket para todo, estilo WhatsApp Web)
   const { socket, connected } = useSocket('/chat')
+
+  const filterTabs = [
+    { key: 'mine', label: t('filters.myChats'), icon: User },
+    { key: 'department', label: t('filters.department'), icon: Building2 },
+    { key: 'unassigned', label: t('filters.unassigned'), icon: Inbox },
+    { key: 'all', label: t('filters.all'), icon: Filter }
+  ]
+
+  const channelOptions = [
+    { key: 'all', label: t('channels.all'), icon: null, color: 'gray' },
+    { key: 'whatsapp', label: t('channels.whatsapp'), icon: WhatsAppIcon, color: 'green' },
+    { key: 'instagram', label: t('channels.instagram'), icon: InstagramIcon, color: 'pink' },
+  ]
 
   useEffect(() => {
     loadConversations()
 
-    // Polling cada 30 segundos como fallback (en caso de que socket falle)
     const interval = setInterval(() => {
       loadConversations()
     }, 30000)
@@ -172,15 +176,12 @@ export default function Conversations() {
     setSearchParams({ phone: selectedPhone })
   }, [selectedPhone])
 
-  // Escuchar eventos de Socket.IO
   useEffect(() => {
     if (!socket) return
 
-    // Nuevo mensaje (de cualquier conversación - socket global)
     socket.on('new_message', (data) => {
-      console.log('Nuevo mensaje via WebSocket:', data)
+      console.log('New message via WebSocket:', data)
 
-      // Solo agregar al chat si corresponde a la conversación seleccionada
       if (data.phone && data.phone === selectedPhoneRef.current) {
         setMessages(prev => {
           const exists = prev.find(m => m.waMsgId === data.msgId || m.id === data.dbId)
@@ -204,24 +205,20 @@ export default function Conversations() {
           }]
         })
 
-        // Marcar como leído inmediatamente (estamos viendo este chat)
         markAsRead(data.phone).then(() => loadConversations())
         return
       }
 
-      // Actualizar la lista lateral (otro chat recibió mensaje)
       loadConversations()
     })
 
-    // Escalamiento (de cualquier conversación)
     socket.on('escalation', (data) => {
-      console.log('Escalamiento detectado:', data)
+      console.log('Escalation detected:', data)
       loadConversations()
     })
 
-    // Actualización de status de mensaje (delivered, read)
     socket.on('message_status_update', (data) => {
-      console.log('Status actualizado:', data)
+      console.log('Status updated:', data)
       setMessages(prev => prev.map(msg =>
         msg.waMsgId === data.msgId
           ? { ...msg, status: data.status }
@@ -229,23 +226,21 @@ export default function Conversations() {
       ))
     })
 
-    // Chat asignado/transferido/liberado
     socket.on('chat_assigned', (data) => {
-      console.log('Chat asignado:', data)
+      console.log('Chat assigned:', data)
       loadConversations()
     })
 
     socket.on('chat_transferred', (data) => {
-      console.log('Chat transferido:', data)
+      console.log('Chat transferred:', data)
       loadConversations()
     })
 
     socket.on('chat_unassigned', (data) => {
-      console.log('Chat liberado:', data)
+      console.log('Chat unassigned:', data)
       loadConversations()
     })
 
-    // Status de agente (online/offline)
     socket.on('agent_status_change', (data) => {
       console.log('Agent status change:', data)
     })
@@ -305,7 +300,7 @@ export default function Conversations() {
       setNewMessage('')
     } catch (err) {
       console.error('Error sending message:', err)
-      alert('Error al enviar mensaje')
+      alert(t('sendError'))
     } finally {
       setSending(false)
     }
@@ -321,7 +316,7 @@ export default function Conversations() {
   const handleDeleteConversation = async () => {
     if (!selectedConv) return
     const sessionId = selectedConv.session_id || selectedConv.sessionId || selectedConv.id
-    if (!confirm(`¿Eliminar conversación con ${selectedConv.contact_name || selectedConv.phone}? Se borrarán todos los mensajes.`)) return
+    if (!confirm(t('deleteConfirm', { name: selectedConv.contact_name || selectedConv.phone }))) return
     const token = useAuthStore.getState().token
     try {
       const res = await fetch(`/api/chat/conversations/${sessionId}`, {
@@ -337,11 +332,11 @@ export default function Conversations() {
         setMessages([])
         loadConversations()
       } else {
-        alert(data.error || 'Error al eliminar')
+        alert(data.error || t('deleteError'))
       }
     } catch (err) {
       console.error('Error deleting conversation:', err)
-      alert('Error al eliminar conversación')
+      alert(t('deleteConversationError'))
     }
   }
 
@@ -365,10 +360,8 @@ export default function Conversations() {
   }
 
   const filteredConversations = conversations.filter(conv => {
-    // Filtro de texto (búsqueda)
     const matchesSearch = (conv.contact_name?.toLowerCase() || '').includes(search.toLowerCase()) ||
       conv.phone.includes(search)
-    // Filtro de canal
     const convChannel = conv.channel || 'whatsapp'
     const matchesChannel = channelFilter === 'all' || convChannel === channelFilter
     return matchesSearch && matchesChannel
@@ -376,10 +369,9 @@ export default function Conversations() {
 
   const selectedConv = conversations.find(c => c.phone === selectedPhone)
 
-  // Tabs visibles según rol
   const visibleTabs = isSupervisor
-    ? FILTER_TABS
-    : FILTER_TABS.filter(t => t.key !== 'all')
+    ? filterTabs
+    : filterTabs.filter(tab => tab.key !== 'all')
 
   // Renderizar contenido multimedia
   const renderMediaContent = (msg) => {
@@ -394,7 +386,6 @@ export default function Conversations() {
 
     const isOutgoing = msg.direction === 'outgoing'
     const baseUrl = '/api/chat/media'
-    // Instagram/Messenger: media_id es URL directa; WhatsApp: es un ID que requiere proxy
     const mediaUrl = (id && (id.startsWith('http://') || id.startsWith('https://'))) ? id : `${baseUrl}/${id}`
 
     switch (type) {
@@ -403,7 +394,7 @@ export default function Conversations() {
           <div className="mt-2 rounded-lg overflow-hidden max-w-xs">
             <img
               src={mediaUrl}
-              alt="Imagen"
+              alt={t('image')}
               className="w-full h-auto cursor-pointer hover:opacity-90"
               onClick={() => window.open(mediaUrl, '_blank')}
               onError={(e) => {
@@ -413,7 +404,7 @@ export default function Conversations() {
             />
             <div className="hidden items-center gap-2 p-3 bg-gray-100 rounded-lg">
               <ImageIcon className="w-5 h-5 text-gray-500" />
-              <span className="text-sm text-gray-600">Imagen no disponible</span>
+              <span className="text-sm text-gray-600">{t('imageUnavailable')}</span>
             </div>
           </div>
         )
@@ -427,7 +418,7 @@ export default function Conversations() {
               className="w-full h-auto rounded-lg"
               preload="metadata"
             >
-              Tu navegador no soporta video
+              {t('videoUnsupported')}
             </video>
           </div>
         )
@@ -446,7 +437,7 @@ export default function Conversations() {
         )
 
       case 'document':
-        const filename = extra?.filename || 'Documento'
+        const filename = extra?.filename || t('document')
         return (
           <a
             href={mediaUrl}
@@ -460,7 +451,7 @@ export default function Conversations() {
                 {filename}
               </p>
               <p className={`text-xs ${isOutgoing ? 'text-green-100' : 'text-gray-500'}`}>
-                {mime || 'Documento'}
+                {mime || t('document')}
               </p>
             </div>
             <Download className={`w-5 h-5 ${isOutgoing ? 'text-white' : 'text-gray-500'}`} />
@@ -525,7 +516,7 @@ export default function Conversations() {
             <div className="flex items-center gap-2 mb-2">
               <Users className={`w-5 h-5 ${isOutgoing ? 'text-white' : 'text-blue-600'}`} />
               <span className={`font-medium ${isOutgoing ? 'text-white' : 'text-gray-800'}`}>
-                {contacts.length === 1 ? 'Contacto compartido' : `${contacts.length} contactos`}
+                {contacts.length === 1 ? t('sharedContact') : t('sharedContacts', { count: contacts.length })}
               </span>
             </div>
             {contacts.map((contact, idx) => (
@@ -571,7 +562,7 @@ export default function Conversations() {
       <div className="w-96 bg-white border-r border-gray-200 flex flex-col">
         {/* Header */}
         <div className="p-4 border-b border-gray-200">
-          <h2 className="text-xl font-bold text-gray-800 mb-3">Conversaciones</h2>
+          <h2 className="text-xl font-bold text-gray-800 mb-3">{t('title')}</h2>
 
           {/* Filter Tabs */}
           <div className={`grid ${isSupervisor ? 'grid-cols-4' : 'grid-cols-3'} gap-1 mb-3 bg-gray-100 p-1 rounded-xl`}>
@@ -600,11 +591,7 @@ export default function Conversations() {
 
           {/* Channel Filter */}
           <div className="flex gap-1 mb-3">
-            {[
-              { key: 'all', label: 'Todos', icon: null, color: 'gray' },
-              { key: 'whatsapp', label: 'WhatsApp', icon: WhatsAppIcon, color: 'green' },
-              { key: 'instagram', label: 'Instagram', icon: InstagramIcon, color: 'pink' },
-            ].map(ch => {
+            {channelOptions.map(ch => {
               const Icon = ch.icon
               const isActive = channelFilter === ch.key
               return (
@@ -632,7 +619,7 @@ export default function Conversations() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar conversación..."
+              placeholder={t('search')}
               className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
             />
           </div>
@@ -643,7 +630,7 @@ export default function Conversations() {
           {filteredConversations.length === 0 ? (
             <div className="p-8 text-center text-gray-400">
               <MessageSquare className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>No hay conversaciones</p>
+              <p>{t('noConversations')}</p>
             </div>
           ) : (
             filteredConversations.map((conv) => (
@@ -671,7 +658,7 @@ export default function Conversations() {
                     )}
                   </div>
                   <p className="text-sm text-gray-500 truncate">
-                    {conv.last_message || 'Sin mensajes'}
+                    {conv.last_message || t('noMessages')}
                   </p>
                   {/* Channel & Assignment badges */}
                   <div className="flex items-center gap-1.5 mt-1 flex-wrap">
@@ -697,14 +684,14 @@ export default function Conversations() {
                     {!conv.agent_name && !conv.department_name && conv.escalation_status === 'ESCALATED' && (
                       <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-yellow-50 text-yellow-600 font-medium">
                         <Inbox className="w-2.5 h-2.5" />
-                        Sin asignar
+                        {t('unassignedBadge')}
                       </span>
                     )}
                     <span className="text-xs text-gray-400">
                       {conv.last_message_time
                         ? formatDistanceToNow(new Date(conv.last_message_time), {
                             addSuffix: true,
-                            locale: es
+                            locale: getDateLocale()
                           })
                         : ''}
                     </span>
@@ -722,7 +709,7 @@ export default function Conversations() {
           <div className="flex-1 flex items-center justify-center text-gray-400">
             <div className="text-center">
               <MessageSquare className="w-16 h-16 mx-auto mb-4 opacity-50" />
-              <p className="text-lg">Selecciona una conversación</p>
+              <p className="text-lg">{t('selectConversation')}</p>
             </div>
           </div>
         ) : (
@@ -769,72 +756,68 @@ export default function Conversations() {
 
               {/* Actions */}
               <div className="flex items-center gap-2">
-                {/* Self-assign button - cuando no está asignado al agente actual */}
                 {selectedConv && agent?.id > 0 && (!selectedConv.assigned_agent_id || selectedConv.assigned_agent_id !== agent.id) && (
                   <button
                     onClick={handleSelfAssign}
                     className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-green-50 text-green-700 hover:bg-green-100 rounded-lg border border-green-200 transition"
-                    title="Tomar este chat"
+                    title={t('takeTitle')}
                   >
                     <UserPlus className="w-4 h-4" />
-                    Tomar
+                    {t('take')}
                   </button>
                 )}
 
-                {/* Assign button - siempre visible para supervisores */}
                 {selectedConv && (
                   <button
                     onClick={() => setShowAssignModal(true)}
                     className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-gray-50 text-gray-700 hover:bg-gray-100 rounded-lg border border-gray-200 transition"
-                    title="Asignar chat"
+                    title={t('assignTitle')}
                   >
                     <UserPlus className="w-4 h-4" />
-                    Asignar
+                    {t('assign')}
                   </button>
                 )}
 
-                {/* Transfer button */}
                 {selectedConv && (
                   <button
                     onClick={() => setShowTransferModal(true)}
                     className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg border border-blue-200 transition"
-                    title="Transferir chat"
+                    title={t('transferTitle')}
                   >
                     <ArrowRightLeft className="w-4 h-4" />
-                    Transferir
+                    {t('transfer')}
                   </button>
                 )}
 
-                {/* Delete button - supervisor only */}
                 {selectedConv && isSupervisor && (
                   <button
                     onClick={handleDeleteConversation}
                     className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100 rounded-lg border border-red-200 transition"
-                    title="Eliminar conversación"
+                    title={t('deleteTitle')}
                   >
                     <Trash2 className="w-4 h-4" />
-                    Eliminar
+                    {t('delete')}
                   </button>
                 )}
 
-                {/* Indicador de conexión WebSocket */}
+                {/* WebSocket connection indicator */}
                 <div className="text-sm">
                   {connected ? (
                     <span className="text-green-600 flex items-center gap-1">
                       <span className="w-2 h-2 bg-green-600 rounded-full"></span>
-                      Tiempo real
+                      {t('realtime')}
                     </span>
                   ) : (
                     <span className="text-yellow-600 flex items-center gap-1">
                       <span className="w-2 h-2 bg-yellow-600 rounded-full"></span>
-                      Reconectando...
+                      {t('reconnecting')}
                     </span>
                   )}
                 </div>
               </div>
             </div>
 
-            {/* Mensajes */}
+            {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {messages.map((msg, idx) => (
                 <div
@@ -851,13 +834,13 @@ export default function Conversations() {
                     {msg.direction === 'incoming' && (
                       <div className="flex items-center gap-1 text-xs text-gray-400 mb-1">
                         <User className="w-3 h-3" />
-                        Cliente
+                        {t('client')}
                       </div>
                     )}
                     {msg.direction === 'outgoing' && msg.is_bot && (
                       <div className="flex items-center gap-1 text-xs text-green-100 mb-1">
                         <Bot className="w-3 h-3" />
-                        Bot
+                        {t('bot')}
                       </div>
                     )}
                     {renderMediaContent(msg)}
@@ -872,7 +855,7 @@ export default function Conversations() {
                     }`}>
                       <span>
                         {msg.created_at
-                          ? format(new Date(msg.created_at), 'HH:mm', { locale: es })
+                          ? format(new Date(msg.created_at), 'HH:mm', { locale: getDateLocale() })
                           : ''}
                       </span>
                       {msg.direction === 'outgoing' && (
@@ -897,7 +880,7 @@ export default function Conversations() {
                   value={newMessage}
                   onChange={handleInputChange}
                   onKeyPress={handleKeyPress}
-                  placeholder="Escribe un mensaje..."
+                  placeholder={t('messagePlaceholder')}
                   className="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
                 />
                 <button
@@ -906,7 +889,7 @@ export default function Conversations() {
                   className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   <Send className="w-5 h-5" />
-                  {sending ? 'Enviando...' : 'Enviar'}
+                  {sending ? t('sending') : t('send')}
                 </button>
               </div>
             </div>

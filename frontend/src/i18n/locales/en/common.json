@@ -1,0 +1,41 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "conversations": "Conversations",
+    "agents": "Agents",
+    "departments": "Departments",
+    "flows": "Flows",
+    "logs": "Logs",
+    "leads": "Leads",
+    "analytics": "Analytics",
+    "monitor": "Monitor",
+    "learning": "AI Brain"
+  },
+  "roles": {
+    "supervisor": "Supervisor",
+    "agent": "Agent"
+  },
+  "actions": {
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "close": "Close",
+    "retry": "Retry",
+    "confirm": "Confirm",
+    "apply": "Apply",
+    "refresh": "Refresh",
+    "create": "Create",
+    "back": "Back"
+  },
+  "status": {
+    "active": "Active",
+    "inactive": "Inactive",
+    "loading": "Loading..."
+  },
+  "logout": "Log out",
+  "platformName": "Chat Platform",
+  "companyName": "Respaldos Chile",
+  "language": "Language",
+  "noDepartment": "No department"
+}

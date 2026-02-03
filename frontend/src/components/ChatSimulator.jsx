@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useFlowStore } from '../store/flowStore'
 
 export default function ChatSimulator({ isOpen, onClose }) {
+  const { t } = useTranslation('flowBuilder')
   const { nodes, edges, flowName } = useFlowStore()
   const [messages, setMessages] = useState([])
   const [inputValue, setInputValue] = useState('')
@@ -27,8 +29,8 @@ export default function ChatSimulator({ isOpen, onClose }) {
 
   const resetSimulation = () => {
     setMessages([
-      { type: 'system', text: `Simulando flujo: "${flowName}"` },
-      { type: 'system', text: 'Escribe un mensaje para iniciar...' }
+      { type: 'system', text: t('simulator.simulatingFlow', { name: flowName }) },
+      { type: 'system', text: t('simulator.writeToStart') }
     ])
     setVariables({})
     setCurrentNodeId(null)
@@ -51,7 +53,7 @@ export default function ChatSimulator({ isOpen, onClose }) {
 
   const processNode = async (node) => {
     if (!node) {
-      addMessage('system', '⚠️ Flujo terminado (no hay siguiente nodo)')
+      addMessage('system', `⚠️ ${t('simulator.flowEndedNoNext')}`)
       setIsWaitingForInput(true)
       return
     }
@@ -64,13 +66,13 @@ export default function ChatSimulator({ isOpen, onClose }) {
 
     switch (node.type) {
       case 'trigger':
-        addMessage('system', `⚡ Trigger activado`)
+        addMessage('system', `⚡ ${t('simulator.triggerActivated')}`)
         const afterTrigger = findNextNode(node.id)
         processNode(afterTrigger)
         break
 
       case 'message':
-        const messageText = replaceVariables(node.data.content || 'Mensaje vacío')
+        const messageText = replaceVariables(node.data.content || t('simulator.emptyMessage'))
         addMessage('bot', messageText)
         await delay(500)
         const afterMessage = findNextNode(node.id)
@@ -92,7 +94,7 @@ export default function ChatSimulator({ isOpen, onClose }) {
         break
 
       case 'condition':
-        addMessage('system', `🔀 Evaluando condición...`)
+        addMessage('system', `🔀 ${t('simulator.evaluatingCondition')}`)
         await delay(300)
 
         // Simple condition evaluation
@@ -110,7 +112,7 @@ export default function ChatSimulator({ isOpen, onClose }) {
             const [, varName, expectedValue] = match
             if (variables[varName] === expectedValue) {
               nextNodeId = cond.goto
-              addMessage('system', `✓ Condición cumplida: ${varName} = ${expectedValue}`)
+              addMessage('system', `✓ ${t('simulator.conditionMet', { variable: varName, value: expectedValue })}`)
               break
             }
           }
@@ -121,7 +123,7 @@ export default function ChatSimulator({ isOpen, onClose }) {
         break
 
       case 'action':
-        addMessage('system', `⚙️ Ejecutando acción: ${node.data.action || 'sin definir'}`)
+        addMessage('system', `⚙️ ${t('simulator.executingAction', { action: node.data.action || t('simulator.undefined') })}`)
         await delay(500)
         const afterAction = findNextNode(node.id)
         processNode(afterAction)
@@ -129,7 +131,7 @@ export default function ChatSimulator({ isOpen, onClose }) {
 
       case 'ai_response':
         // Simulate AI response
-        addMessage('system', `🧠 Generando respuesta con IA...`)
+        addMessage('system', `🧠 ${t('simulator.generatingAI')}`)
         setIsTyping(true)
         await delay(1500) // Simulate AI processing time
         setIsTyping(false)
@@ -137,7 +139,7 @@ export default function ChatSimulator({ isOpen, onClose }) {
         // Generate simulated response based on prompts
         const systemPrompt = node.data.system_prompt || ''
         const userPrompt = replaceVariables(node.data.user_prompt || '')
-        const simulatedAI = `[Respuesta IA simulada]\n${systemPrompt.substring(0, 50)}...\nPara: "${userPrompt.substring(0, 50)}..."`
+        const simulatedAI = `[${t('simulator.simulatedAIResponse')}]\n${systemPrompt.substring(0, 50)}...\n${t('simulator.forPrompt')}: "${userPrompt.substring(0, 50)}..."`
         addMessage('bot', simulatedAI)
 
         // Save to variable if specified
@@ -146,7 +148,7 @@ export default function ChatSimulator({ isOpen, onClose }) {
             ...prev,
             [node.data.variable]: 'respuesta_ia_simulada'
           }))
-          addMessage('system', `📝 Variable "${node.data.variable}" = respuesta IA`)
+          addMessage('system', `📝 ${t('simulator.variableSaved', { variable: node.data.variable, value: t('simulator.aiResponseValue') })}`)
         }
 
         await delay(300)
@@ -156,15 +158,15 @@ export default function ChatSimulator({ isOpen, onClose }) {
 
       case 'webhook':
         // Simulate webhook call
-        addMessage('system', `🌐 Llamando webhook: ${node.data.url || 'URL no definida'}`)
-        addMessage('system', `   Método: ${node.data.method || 'POST'}`)
+        addMessage('system', `🌐 ${t('simulator.callingWebhook', { url: node.data.url || t('simulator.urlNotDefined') })}`)
+        addMessage('system', `   ${t('simulator.method')}: ${node.data.method || 'POST'}`)
         setIsTyping(true)
         await delay(1000) // Simulate API call
         setIsTyping(false)
 
         // Simulate response
         const webhookResult = { success: true, data: { status: 'ok', simulated: true } }
-        addMessage('system', `✓ Webhook respondió: ${JSON.stringify(webhookResult).substring(0, 50)}...`)
+        addMessage('system', `✓ ${t('simulator.webhookResponded', { response: JSON.stringify(webhookResult).substring(0, 50) })}...`)
 
         // Save to variable if specified
         if (node.data.variable) {
@@ -183,7 +185,7 @@ export default function ChatSimulator({ isOpen, onClose }) {
         const delaySeconds = node.data.seconds || 2
         const showTyping = node.data.typing_indicator !== false
 
-        addMessage('system', `⏱️ Esperando ${delaySeconds} segundos...`)
+        addMessage('system', `⏱️ ${t('simulator.waitingSeconds', { seconds: delaySeconds })}`)
 
         if (showTyping) {
           setIsTyping(true)
@@ -200,18 +202,18 @@ export default function ChatSimulator({ isOpen, onClose }) {
         break
 
       case 'transfer':
-        addMessage('bot', node.data.content || 'Transfiriendo a un agente...')
-        addMessage('system', '👤 Conversación transferida a humano')
+        addMessage('bot', node.data.content || t('simulator.transferring'))
+        addMessage('system', `👤 ${t('simulator.transferredToHuman')}`)
         setIsWaitingForInput(true)
         break
 
       case 'end':
-        addMessage('system', '🏁 Flujo completado')
+        addMessage('system', `🏁 ${t('simulator.flowCompleted')}`)
         setIsWaitingForInput(true)
         break
 
       default:
-        addMessage('system', `Nodo desconocido: ${node.type}`)
+        addMessage('system', `${t('simulator.unknownNode')}: ${node.type}`)
         const defaultNext = findNextNode(node.id)
         processNode(defaultNext)
     }
@@ -257,7 +259,7 @@ export default function ChatSimulator({ isOpen, onClose }) {
         ...prev,
         [currentNode.data.variable]: valueToSave
       }))
-      addMessage('system', `📝 Variable "${currentNode.data.variable}" = "${valueToSave}"`)
+      addMessage('system', `📝 ${t('simulator.variableSet', { variable: currentNode.data.variable, value: valueToSave })}`)
 
       // Continue to next node
       setTimeout(() => {
@@ -270,7 +272,7 @@ export default function ChatSimulator({ isOpen, onClose }) {
       if (trigger) {
         processNode(trigger)
       } else {
-        addMessage('system', '⚠️ No hay nodo Trigger en el flujo')
+        addMessage('system', `⚠️ ${t('simulator.noTriggerNode')}`)
       }
     }
   }
@@ -312,8 +314,8 @@ export default function ChatSimulator({ isOpen, onClose }) {
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
           <div>
-            <div style={{ fontWeight: 600, fontSize: '15px' }}>🧪 Simulador de Chat</div>
-            <div style={{ fontSize: '12px', opacity: 0.8 }}>Prueba tu flujo aquí</div>
+            <div style={{ fontWeight: 600, fontSize: '15px' }}>🧪 {t('simulator.title')}</div>
+            <div style={{ fontSize: '12px', opacity: 0.8 }}>{t('simulator.subtitle')}</div>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button
@@ -378,7 +380,7 @@ export default function ChatSimulator({ isOpen, onClose }) {
               fontWeight: mode === 'server' ? 600 : 400
             }}
           >
-            Servidor
+            {t('simulator.server')}
           </button>
         </div>
       </div>
@@ -391,7 +393,7 @@ export default function ChatSimulator({ isOpen, onClose }) {
           fontSize: '11px',
           borderBottom: '1px solid #e5e7eb'
         }}>
-          <strong>Variables:</strong>{' '}
+          <strong>{t('simulator.variables')}:</strong>{' '}
           {Object.entries(variables).map(([k, v]) => (
             <span key={k} style={{
               background: '#dcfce7',
@@ -454,7 +456,7 @@ export default function ChatSimulator({ isOpen, onClose }) {
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyPress={handleKeyPress}
-          placeholder={isWaitingForInput ? "Escribe un mensaje..." : "Esperando respuesta..."}
+          placeholder={isWaitingForInput ? t('simulator.placeholder') : t('simulator.waitingResponse')}
           disabled={!isWaitingForInput}
           style={{
             flex: 1,

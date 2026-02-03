@@ -1,16 +1,10 @@
+import { useTranslation } from 'react-i18next'
 import { Activity, Code, BookOpen, MessageSquare, Zap } from 'lucide-react'
 import KnowledgeSummaryBar from './KnowledgeSummaryBar'
 import PipelineView from './tabs/PipelineView'
 import PromptView from './tabs/PromptView'
 import KnowledgeView from './tabs/KnowledgeView'
 import HistoryView from './tabs/HistoryView'
-
-const TABS = [
-  { id: 'pipeline', label: 'Pipeline', icon: Activity },
-  { id: 'prompt', label: 'Prompt', icon: Code },
-  { id: 'knowledge', label: 'Conocimiento', icon: BookOpen },
-  { id: 'history', label: 'Historial', icon: MessageSquare }
-]
 
 export default function RayosXPanel({
   activeTab,
@@ -20,6 +14,15 @@ export default function RayosXPanel({
   sessionCorrections,
   isLoading
 }) {
+  const { t } = useTranslation('learning')
+
+  const TABS = [
+    { id: 'pipeline', label: t('probador.pipeline'), icon: Activity },
+    { id: 'prompt', label: t('probador.prompt'), icon: Code },
+    { id: 'knowledge', label: t('probador.knowledge'), icon: BookOpen },
+    { id: 'history', label: t('probador.history'), icon: MessageSquare }
+  ]
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Knowledge summary bar */}
@@ -54,8 +57,8 @@ export default function RayosXPanel({
         {!trace && !isLoading ? (
           <div className="flex flex-col items-center justify-center h-full text-center p-6">
             <Zap className="w-10 h-10 text-amber-300 mb-3" />
-            <p className="text-sm text-gray-400 font-medium">Envia un mensaje para ver el pipeline</p>
-            <p className="text-xs text-gray-300 mt-1">El debug se activa con cada mensaje</p>
+            <p className="text-sm text-gray-400 font-medium">{t('probador.sendMessageToSeePipeline')}</p>
+            <p className="text-xs text-gray-300 mt-1">{t('probador.debugActivatesPerMessage')}</p>
           </div>
         ) : (
           <>
