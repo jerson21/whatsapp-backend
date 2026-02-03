@@ -146,12 +146,14 @@ function createChatbot({ pool, logger, ssePush, sendTextViaCloudAPI, sendInterac
           const collectResponses = (fr) => {
             const texts = [];
             const dbIds = [];
-            if (fr.text) texts.push(fr.text);
-            if (fr.sentMessages) {
+            // Prefer sentMessages (individual parts) over fr.text (full blob)
+            if (fr.sentMessages && fr.sentMessages.length > 0) {
               for (const m of fr.sentMessages) {
                 if (m.text) texts.push(m.text);
                 if (m.dbId) dbIds.push(m.dbId);
               }
+            } else if (fr.text) {
+              texts.push(fr.text);
             }
             return { texts, dbIds };
           };

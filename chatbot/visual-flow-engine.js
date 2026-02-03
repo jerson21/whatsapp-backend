@@ -545,7 +545,10 @@ IMPORTANTE: Usa SOLO estos precios. Los precios en las respuestas del equipo pue
         behavioralRules = rules;
         if (rules.length > 0) {
           const rulesText = rules.map(r => `- ${r.rule_text}`).join('\n');
-          systemPrompt += `\n\n--- REGLAS DE COMPORTAMIENTO ---\n${rulesText}\n--- FIN REGLAS ---`;
+          systemPrompt += `\n\n--- REGLAS DE COMPORTAMIENTO (PRIORIDAD ALTA) ---
+IMPORTANTE: Estas reglas fueron definidas por el administrador y DEBEN cumplirse siempre, incluso si contradicen el comportamiento anterior en la conversacion.
+${rulesText}
+--- FIN REGLAS ---`;
         }
       } catch (err) {
         if (err.code !== 'ER_NO_SUCH_TABLE') {
