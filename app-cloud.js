@@ -977,11 +977,11 @@ const IG_PROFILE_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 horas
  * @param {string} userId - Instagram-scoped user ID
  * @returns {Promise<{name: string|null, username: string|null}>} nombre y username
  */
-async function fetchInstagramProfile(userId) {
-  // Revisar cache
+async function fetchInstagramProfile(userId, forceRefresh = false) {
+  // Revisar cache (si no fuerza refresh y cache tiene username)
   const cached = igProfileCache.get(userId);
-  if (cached && (Date.now() - cached.ts < IG_PROFILE_CACHE_TTL)) {
-    return { name: cached.name, username: cached.username || null };
+  if (!forceRefresh && cached && (Date.now() - cached.ts < IG_PROFILE_CACHE_TTL) && cached.username) {
+    return { name: cached.name, username: cached.username };
   }
 
   const token = process.env.INSTAGRAM_PAGE_ACCESS_TOKEN || META_ACCESS_TOKEN;
@@ -2158,7 +2158,8 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             } catch (e) { logger.error({ e }, 'inboxPush conv update'); }
 
             // Async: fetch Instagram/Messenger profile y actualizar nombre de sesión (non-blocking)
-            if ((channel === 'instagram' || channel === 'messenger') && !contactName) {
+            // También refetch si falta ig_username aunque tengamos nombre
+            if ((channel === 'instagram' || channel === 'messenger') && (!contactName || !igUsername)) {
               fetchInstagramProfile(from).then(profile => {
                 if (profile.name && sessionId) {
                   const updates = ['name = ?'];
