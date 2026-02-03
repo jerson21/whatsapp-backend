@@ -260,7 +260,7 @@ export default function Conversations() {
       if (data.phone && data.contactName) {
         setConversations(prev => prev.map(c =>
           c.phone === data.phone
-            ? { ...c, contact_name: data.contactName, name: data.contactName }
+            ? { ...c, contact_name: data.contactName, name: data.contactName, ig_username: data.igUsername || c.ig_username }
             : c
         ))
       }
@@ -693,11 +693,16 @@ export default function Conversations() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
-                    <p className="font-medium text-gray-800 truncate">
-                      {conv.contact_name || conv.phone}
-                    </p>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <p className="font-medium text-gray-800 truncate">
+                        {conv.contact_name || conv.phone}
+                      </p>
+                      {conv.ig_username && (
+                        <span className="text-xs text-gray-400 truncate flex-shrink-0">@{conv.ig_username}</span>
+                      )}
+                    </div>
                     {conv.unread_count > 0 && (
-                      <span className="bg-green-500 text-white text-xs font-medium px-2 py-0.5 rounded-full">
+                      <span className="bg-green-500 text-white text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0">
                         {conv.unread_count}
                       </span>
                     )}
@@ -768,9 +773,14 @@ export default function Conversations() {
                   </span>
                 </div>
                 <div>
-                  <p className="font-medium text-gray-800">
-                    {selectedConv?.contact_name || selectedPhone}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-gray-800">
+                      {selectedConv?.contact_name || selectedPhone}
+                    </p>
+                    {selectedConv?.ig_username && (
+                      <span className="text-sm text-gray-400">@{selectedConv.ig_username}</span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 text-sm text-gray-500">
                     <ChannelBadge channel={selectedConv?.channel} />
                     <span className="flex items-center gap-1">

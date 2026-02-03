@@ -236,6 +236,7 @@ async function ensureSchema() {
         token VARCHAR(64) NOT NULL,
         phone VARCHAR(20) NOT NULL,
         name VARCHAR(100),
+        ig_username VARCHAR(100) NULL COMMENT 'Instagram @username handle',
         status ENUM('OPEN','CLOSED') DEFAULT 'OPEN',
         profile_pic_url TEXT,
         is_business BOOLEAN DEFAULT FALSE,
@@ -443,6 +444,18 @@ await conn.query(`
     if (colsMediaId.length && colsMediaId[0].DATA_TYPE === 'varchar' && colsMediaId[0].CHARACTER_MAXIMUM_LENGTH < 2048) {
       logger.info('Ampliando columna media_id a TEXT en chat_messages (para URLs de Instagram)...');
       await conn.query(`ALTER TABLE chat_messages MODIFY COLUMN media_id TEXT NULL`);
+    }
+
+    // Agregar columna ig_username a chat_sessions si no existe
+    const [colsIgUsername] = await conn.query(`
+      SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'chat_sessions'
+      AND COLUMN_NAME = 'ig_username'
+    `);
+    if (!colsIgUsername.length) {
+      logger.info('Agregando columna ig_username a chat_sessions...');
+      await conn.query(`ALTER TABLE chat_sessions ADD COLUMN ig_username VARCHAR(100) NULL COMMENT 'Instagram @username handle' AFTER name`);
     }
 
     // Orchestrator tables
@@ -962,19 +975,19 @@ const IG_PROFILE_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 horas
 /**
  * Obtener nombre/username de un usuario de Instagram via Graph API
  * @param {string} userId - Instagram-scoped user ID
- * @returns {Promise<string|null>} nombre o @username, o null si falla
+ * @returns {Promise<{name: string|null, username: string|null}>} nombre y username
  */
 async function fetchInstagramProfile(userId) {
   // Revisar cache
   const cached = igProfileCache.get(userId);
   if (cached && (Date.now() - cached.ts < IG_PROFILE_CACHE_TTL)) {
-    return cached.name;
+    return { name: cached.name, username: cached.username || null };
   }
 
   const token = process.env.INSTAGRAM_PAGE_ACCESS_TOKEN || META_ACCESS_TOKEN;
   if (!token) {
     logger.warn('No access token available for Instagram profile lookup');
-    return null;
+    return { name: null, username: null };
   }
 
   try {
@@ -983,18 +996,18 @@ async function fetchInstagramProfile(userId) {
     if (!r.ok) {
       const errBody = await r.text();
       logger.warn({ userId, status: r.status, body: errBody }, 'Failed to fetch Instagram profile');
-      return null;
+      return { name: null, username: null };
     }
     const data = await r.json();
-    // Preferir name, sino @username
     const displayName = data.name || (data.username ? `@${data.username}` : null);
-    // Guardar en cache
-    igProfileCache.set(userId, { name: displayName, ts: Date.now() });
-    logger.info({ userId, name: displayName, username: data.username }, '📸 Instagram profile fetched');
-    return displayName;
+    const username = data.username || null;
+    // Guardar en cache (incluye username)
+    igProfileCache.set(userId, { name: displayName, username, ts: Date.now() });
+    logger.info({ userId, name: displayName, username }, '📸 Instagram profile fetched');
+    return { name: displayName, username };
   } catch (err) {
     logger.error({ err, userId }, 'Error fetching Instagram profile');
-    return null;
+    return { name: null, username: null };
   }
 }
 
@@ -1943,6 +1956,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             // WhatsApp: viene en value.contacts
             // Instagram/Messenger: usar cache (instant), fetch async si no está
             let contactName = null;
+            let igUsername = null;
             if (channel === 'whatsapp') {
               contactName = contactsFromWebhook[0]?.profile?.name || null;
             } else if (channel === 'instagram' || channel === 'messenger') {
@@ -1950,6 +1964,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               const cached = igProfileCache.get(from);
               if (cached && (Date.now() - cached.ts < IG_PROFILE_CACHE_TTL)) {
                 contactName = cached.name;
+                igUsername = cached.username || null;
               }
               // Si no hay cache, se fetchea async después del emit (ver abajo)
             }
@@ -1986,6 +2001,10 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               if (contactName && rows[0].name !== contactName) {
                 await pool.query('UPDATE chat_sessions SET name = ? WHERE id = ?', [contactName, sessionId]);
               }
+              // Actualizar ig_username si disponible
+              if (igUsername) {
+                await pool.query('UPDATE chat_sessions SET ig_username = ? WHERE id = ? AND (ig_username IS NULL OR ig_username != ?)', [igUsername, sessionId, igUsername]);
+              }
             } else {
               const token = randomToken(24);
               const baseEnable = CHATBOT_AUTO_ENABLE_NEW_SESSIONS || chatbotGlobalEnabled;
@@ -2011,9 +2030,9 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               const channelMetadata = normalized.metadata ? JSON.stringify(normalized.metadata) : null;
 
               const [ins] = await pool.query(
-                `INSERT INTO chat_sessions (token, phone, name, status, chatbot_enabled, chatbot_mode, channel, channel_metadata)
-                 VALUES (?,?,?, 'OPEN', ?, ?, ?, ?)`,
-                [token, from, contactName, enableForNew, enableForNew ? 'automatic' : 'manual', channel, channelMetadata]
+                `INSERT INTO chat_sessions (token, phone, name, ig_username, status, chatbot_enabled, chatbot_mode, channel, channel_metadata)
+                 VALUES (?,?,?,?, 'OPEN', ?, ?, ?, ?)`,
+                [token, from, contactName, igUsername, enableForNew, enableForNew ? 'automatic' : 'manual', channel, channelMetadata]
               );
               sessionId = ins.insertId;
               sessionChatbotEnabled = enableForNew;
@@ -2140,14 +2159,21 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
             // Async: fetch Instagram/Messenger profile y actualizar nombre de sesión (non-blocking)
             if ((channel === 'instagram' || channel === 'messenger') && !contactName) {
-              fetchInstagramProfile(from).then(name => {
-                if (name && sessionId) {
-                  pool.query('UPDATE chat_sessions SET name = ? WHERE id = ?', [name, sessionId])
+              fetchInstagramProfile(from).then(profile => {
+                if (profile.name && sessionId) {
+                  const updates = ['name = ?'];
+                  const vals = [profile.name];
+                  if (profile.username) {
+                    updates.push('ig_username = ?');
+                    vals.push(profile.username);
+                  }
+                  vals.push(sessionId);
+                  pool.query(`UPDATE chat_sessions SET ${updates.join(', ')} WHERE id = ?`, vals)
                     .catch(e => logger.error({ e }, 'Error updating IG profile async'));
                   // Notificar al frontend del nombre actualizado
                   if (global.io) {
                     global.io.of('/chat').to('dashboard_all').emit('contact_name_update', {
-                      phone: from, sessionId, contactName: name
+                      phone: from, sessionId, contactName: profile.name, igUsername: profile.username || null
                     });
                   }
                 }
@@ -4323,6 +4349,7 @@ app.get('/api/chat/conversations', async (req, res) => {
         s.id,
         s.phone,
         s.name,
+        s.ig_username,
         s.token,
         s.profile_pic_url,
         s.is_business,
@@ -4377,6 +4404,7 @@ app.get('/api/chat/conversations', async (req, res) => {
       sessionId: conv.id,
       session_id: conv.id,
       contact_name: conv.name,
+      ig_username: conv.ig_username || null,
       escalation_status: conv.status
     }));
 
