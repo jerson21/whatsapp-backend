@@ -3033,18 +3033,31 @@ app.post('/api/chat/send', sendLimiter, async (req, res) => {
     }
 
     // Insert with status 'sent' (Cloud API actualizará por webhook)
-    const [result] = await pool.query(
-      `INSERT INTO chat_messages (session_id, direction, text, wa_jid, wa_msg_id, status, channel) VALUES (?,?,?,?,?,?,?)`,
-      [sessionId, 'out', String(text), phone, waMsgId, 'sent', sessionChannel]
-    );
+    let messageId;
+    try {
+      const [result] = await pool.query(
+        `INSERT INTO chat_messages (session_id, direction, text, wa_jid, wa_msg_id, status, channel) VALUES (?,?,?,?,?,?,?)`,
+        [sessionId, 'out', String(text), phone, waMsgId, 'sent', sessionChannel]
+      );
+      messageId = result.insertId;
+    } catch (dbErr) {
+      if (dbErr.code === 'ER_DUP_ENTRY') {
+        // Mensaje ya enviado y guardado previamente — buscar el ID existente
+        const [existing] = await pool.query(
+          `SELECT id FROM chat_messages WHERE wa_msg_id = ? LIMIT 1`, [waMsgId]
+        );
+        messageId = existing[0]?.id || Date.now();
+        logger.warn({ waMsgId, sessionId }, 'Duplicate wa_msg_id on send — message already saved');
+      } else {
+        throw dbErr;
+      }
+    }
 
     // 🤖 Cuando agente humano envía mensaje, cambiar a modo manual
     await pool.query(
       `UPDATE chat_sessions SET chatbot_mode = 'manual' WHERE id = ?`,
       [sessionId]
     );
-
-    const messageId = result.insertId;
 
     // Enviar por SSE
     ssePush(sessionId, {
