@@ -140,6 +140,8 @@ export default function Conversations() {
   const selectedConversation = conversations.find(c => c.phone === selectedPhone)
   const selectedPhoneRef = useRef(selectedPhone)
   selectedPhoneRef.current = selectedPhone
+  const selectedSessionId = selectedConversation?.session_id || selectedConversation?.sessionId || selectedConversation?.id || null
+  const hasConnectedOnceRef = useRef(false)
 
   const { socket, connected } = useSocket('/chat')
 
@@ -245,6 +247,30 @@ export default function Conversations() {
       console.log('Agent status change:', data)
     })
 
+    // Actualización async de nombre (Instagram profile fetch)
+    socket.on('contact_name_update', (data) => {
+      if (data.phone && data.contactName) {
+        setConversations(prev => prev.map(c =>
+          c.phone === data.phone
+            ? { ...c, contact_name: data.contactName, name: data.contactName }
+            : c
+        ))
+      }
+    })
+
+    // Al reconectar, recargar mensajes del chat abierto
+    const onReconnect = () => {
+      if (hasConnectedOnceRef.current) {
+        console.log('Socket reconnected, reloading data...')
+        if (selectedPhoneRef.current) {
+          loadMessages(selectedPhoneRef.current)
+        }
+        loadConversations()
+      }
+      hasConnectedOnceRef.current = true
+    }
+    socket.on('connect', onReconnect)
+
     return () => {
       socket.off('new_message')
       socket.off('escalation')
@@ -253,8 +279,19 @@ export default function Conversations() {
       socket.off('chat_transferred')
       socket.off('chat_unassigned')
       socket.off('agent_status_change')
+      socket.off('contact_name_update')
+      socket.off('connect', onReconnect)
     }
   }, [socket])
+
+  // Unirse al room de la sesión activa para recibir mensajes directos
+  useEffect(() => {
+    if (!socket || !selectedSessionId) return
+    socket.emit('join_session', { sessionId: selectedSessionId })
+    return () => {
+      socket.emit('leave_session', { sessionId: selectedSessionId })
+    }
+  }, [socket, selectedSessionId])
 
   useEffect(() => {
     if (isInitialLoadRef.current) {

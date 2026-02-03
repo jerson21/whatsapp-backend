@@ -1941,12 +1941,17 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
             // Extraer nombre del contacto
             // WhatsApp: viene en value.contacts
-            // Instagram/Messenger: se obtiene via Graph API
+            // Instagram/Messenger: usar cache (instant), fetch async si no está
             let contactName = null;
             if (channel === 'whatsapp') {
               contactName = contactsFromWebhook[0]?.profile?.name || null;
             } else if (channel === 'instagram' || channel === 'messenger') {
-              contactName = await fetchInstagramProfile(from);
+              // Non-blocking: solo usar cache (instant)
+              const cached = igProfileCache.get(from);
+              if (cached && (Date.now() - cached.ts < IG_PROFILE_CACHE_TTL)) {
+                contactName = cached.name;
+              }
+              // Si no hay cache, se fetchea async después del emit (ver abajo)
             }
 
             // Construir mediaFields desde el mensaje normalizado
@@ -2132,6 +2137,22 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                 timestamp: Date.now()
               });
             } catch (e) { logger.error({ e }, 'inboxPush conv update'); }
+
+            // Async: fetch Instagram/Messenger profile y actualizar nombre de sesión (non-blocking)
+            if ((channel === 'instagram' || channel === 'messenger') && !contactName) {
+              fetchInstagramProfile(from).then(name => {
+                if (name && sessionId) {
+                  pool.query('UPDATE chat_sessions SET name = ? WHERE id = ?', [name, sessionId])
+                    .catch(e => logger.error({ e }, 'Error updating IG profile async'));
+                  // Notificar al frontend del nombre actualizado
+                  if (global.io) {
+                    global.io.of('/chat').to('dashboard_all').emit('contact_name_update', {
+                      phone: from, sessionId, contactName: name
+                    });
+                  }
+                }
+              }).catch(() => {});
+            }
 
             // Acciones por respuesta interactiva (plantillas con botones)
             // DESACTIVADO: Ahora usa ConversationEngine unificado
@@ -6150,6 +6171,19 @@ chatNamespace.on('connection', (socket) => {
     }
 
     logger.info({ socketId: socket.id, agentId: socket.agentId, role: socket.agentRole }, 'Dashboard socket conectado');
+
+    // Permitir al dashboard unirse/salir de rooms de sesión específicos
+    socket.on('join_session', (data) => {
+      if (data?.sessionId) {
+        socket.join(`session_${data.sessionId}`);
+        logger.debug({ socketId: socket.id, sessionId: data.sessionId }, 'Dashboard joined session room');
+      }
+    });
+    socket.on('leave_session', (data) => {
+      if (data?.sessionId) {
+        socket.leave(`session_${data.sessionId}`);
+      }
+    });
 
     socket.on('disconnect', () => {
       if (socket.agentId) {
