@@ -267,7 +267,8 @@ await conn.query(`
     direction ENUM('in','out') NOT NULL,
     text TEXT NOT NULL,
     wa_jid VARCHAR(64) NOT NULL,
-    wa_msg_id VARCHAR(255),
+    wa_msg_id TEXT NULL,
+    wa_msg_id_hash VARCHAR(64) AS (SHA2(wa_msg_id, 256)) STORED,
     status ENUM('pending','sent','delivered','read','played','failed') DEFAULT 'pending',
     delivered_at TIMESTAMP NULL DEFAULT NULL,
     read_at TIMESTAMP NULL DEFAULT NULL,
@@ -282,7 +283,7 @@ await conn.query(`
     media_extra JSON NULL,            -- Datos adicionales (ej: coordenadas, contactos, flags)
 
     INDEX idx_session (session_id),
-    UNIQUE KEY uniq_wa_msg_id (wa_msg_id),
+    UNIQUE KEY uniq_wa_msg_id_hash (wa_msg_id_hash),
     CONSTRAINT fk_session FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `);
@@ -456,6 +457,32 @@ await conn.query(`
     if (!colsIgUsername.length) {
       logger.info('Agregando columna ig_username a chat_sessions...');
       await conn.query(`ALTER TABLE chat_sessions ADD COLUMN ig_username VARCHAR(100) NULL COMMENT 'Instagram @username handle' AFTER name`);
+    }
+
+    // Ampliar wa_msg_id para IDs largos de Instagram y recrear UNIQUE con hash
+    const [colsWaMsgId] = await conn.query(`
+      SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'chat_messages'
+      AND COLUMN_NAME = 'wa_msg_id'
+    `);
+    if (colsWaMsgId.length && colsWaMsgId[0].DATA_TYPE === 'varchar') {
+      logger.info('Ampliando wa_msg_id a TEXT y agregando columna wa_msg_id_hash para UNIQUE...');
+      // Agregar columna hash si no existe
+      const [colsHash] = await conn.query(`
+        SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'chat_messages'
+        AND COLUMN_NAME = 'wa_msg_id_hash'
+      `);
+      if (!colsHash.length) {
+        // Eliminar UNIQUE viejo, cambiar a TEXT, agregar hash column con UNIQUE
+        await conn.query(`ALTER TABLE chat_messages DROP INDEX uniq_wa_msg_id`).catch(() => {});
+        await conn.query(`ALTER TABLE chat_messages MODIFY COLUMN wa_msg_id TEXT NULL`);
+        await conn.query(`ALTER TABLE chat_messages ADD COLUMN wa_msg_id_hash VARCHAR(64) AS (SHA2(wa_msg_id, 256)) STORED AFTER wa_msg_id`);
+        await conn.query(`ALTER TABLE chat_messages ADD UNIQUE INDEX uniq_wa_msg_id_hash (wa_msg_id_hash)`);
+        logger.info('✅ wa_msg_id migrado a TEXT con hash UNIQUE');
+      }
     }
 
     // Orchestrator tables
