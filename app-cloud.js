@@ -1022,31 +1022,40 @@ async function fetchInstagramProfile(userId, forceRefresh = false) {
     return { name: cached.name, username: cached.username };
   }
 
-  const token = process.env.INSTAGRAM_ACCESS_TOKEN || META_ACCESS_TOKEN;
-  if (!token) {
+  const igToken = process.env.INSTAGRAM_ACCESS_TOKEN || '';
+  const fbToken = META_ACCESS_TOKEN;
+  if (!igToken && !fbToken) {
     logger.warn('No access token available for Instagram profile lookup');
     return { name: null, username: null };
   }
 
-  try {
-    const url = `https://graph.facebook.com/v22.0/${userId}?fields=name,username&access_token=${token}`;
-    const r = await fetch(url);
-    if (!r.ok) {
-      const errBody = await r.text();
-      logger.warn({ userId, status: r.status, body: errBody }, 'Failed to fetch Instagram profile');
-      return { name: null, username: null };
+  // Intentar primero con graph.instagram.com (token de Instagram Login)
+  // Fallback a graph.facebook.com (token de System User)
+  const attempts = [];
+  if (igToken) attempts.push({ host: 'graph.instagram.com', token: igToken });
+  if (fbToken && fbToken !== igToken) attempts.push({ host: 'graph.facebook.com', token: fbToken });
+
+  for (const { host, token } of attempts) {
+    try {
+      const url = `https://${host}/v22.0/${userId}?fields=name,username,profile_pic&access_token=${token}`;
+      const r = await fetch(url);
+      if (!r.ok) {
+        const errBody = await r.text();
+        logger.warn({ userId, host, status: r.status, body: errBody }, 'Failed to fetch Instagram profile');
+        continue;
+      }
+      const data = await r.json();
+      const username = data.username || null;
+      const displayName = data.name || (username ? `@${username}` : null);
+      const profilePic = data.profile_pic || null;
+      igProfileCache.set(userId, { name: displayName, username, profilePic, ts: Date.now() });
+      logger.info({ userId, host, name: displayName, username }, '📸 Instagram profile fetched');
+      return { name: displayName, username, profilePic };
+    } catch (err) {
+      logger.error({ err, userId, host }, 'Error fetching Instagram profile');
     }
-    const data = await r.json();
-    const displayName = data.name || (data.username ? `@${data.username}` : null);
-    const username = data.username || null;
-    // Guardar en cache (incluye username)
-    igProfileCache.set(userId, { name: displayName, username, ts: Date.now() });
-    logger.info({ userId, name: displayName, username }, '📸 Instagram profile fetched');
-    return { name: displayName, username };
-  } catch (err) {
-    logger.error({ err, userId }, 'Error fetching Instagram profile');
-    return { name: null, username: null };
   }
+  return { name: null, username: null };
 }
 
 /* ========= Auth Panel (dual-mode: JWT + Basic + API Key + legacy env) ========= */
@@ -2011,11 +2020,22 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           if (evt.message?.is_echo) {
             // Echo = mensaje enviado por nuestra página desde la app nativa
             echoMessages.push(evt);
+          } else if (evt.read) {
+            // Read receipt: el usuario leyó nuestro mensaje
+            const mid = evt.read.mid;
+            if (mid) {
+              statuses.push({ id: mid, status: 'read' });
+            }
+          } else if (evt.delivery) {
+            // Delivery receipt (Messenger): mensaje entregado
+            const mids = evt.delivery?.mids || [];
+            for (const mid of mids) {
+              statuses.push({ id: mid, status: 'delivered' });
+            }
           } else if (evt.message || evt.postback) {
             messages.push(evt);
           }
         }
-        // Instagram/Messenger no envían statuses en el mismo formato
       } else {
         // WhatsApp usa entry.changes[].value.messages[]
         const changes = Array.isArray(entry.changes) ? entry.changes : [];
