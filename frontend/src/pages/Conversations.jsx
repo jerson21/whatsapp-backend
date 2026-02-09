@@ -260,7 +260,7 @@ export default function Conversations() {
       if (data.phone && data.contactName) {
         setConversations(prev => prev.map(c =>
           c.phone === data.phone
-            ? { ...c, contact_name: data.contactName, name: data.contactName, ig_username: data.igUsername || c.ig_username }
+            ? { ...c, contact_name: data.contactName, name: data.contactName, ig_username: data.igUsername || c.ig_username, profile_pic_url: data.profilePic || c.profile_pic_url }
             : c
         ))
       }
@@ -686,7 +686,10 @@ export default function Conversations() {
                   selectedPhone === conv.phone ? 'bg-green-50' : ''
                 }`}
               >
-                <div className={`w-12 h-12 ${getAvatarColor(conv.contact_name || conv.phone)} rounded-full flex items-center justify-center flex-shrink-0`}>
+                {conv.profile_pic_url ? (
+                  <img src={conv.profile_pic_url} alt="" className="w-12 h-12 rounded-full object-cover flex-shrink-0" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
+                ) : null}
+                <div className={`w-12 h-12 ${getAvatarColor(conv.contact_name || conv.phone)} rounded-full flex items-center justify-center flex-shrink-0`} style={conv.profile_pic_url ? { display: 'none' } : {}}>
                   <span className="text-white font-semibold text-sm">
                     {getInitials(conv.contact_name, conv.phone)}
                   </span>
@@ -767,7 +770,10 @@ export default function Conversations() {
             {/* Header del chat */}
             <div className="bg-white border-b border-gray-200 p-4 flex items-center justify-between gap-4">
               <div className="flex items-center gap-4">
-                <div className={`w-10 h-10 ${getAvatarColor(selectedConv?.contact_name || selectedPhone)} rounded-full flex items-center justify-center`}>
+                {selectedConv?.profile_pic_url ? (
+                  <img src={selectedConv.profile_pic_url} alt="" className="w-10 h-10 rounded-full object-cover" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
+                ) : null}
+                <div className={`w-10 h-10 ${getAvatarColor(selectedConv?.contact_name || selectedPhone)} rounded-full flex items-center justify-center`} style={selectedConv?.profile_pic_url ? { display: 'none' } : {}}>
                   <span className="text-white font-semibold text-sm">
                     {getInitials(selectedConv?.contact_name, selectedPhone)}
                   </span>

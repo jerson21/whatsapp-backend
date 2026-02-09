@@ -1019,7 +1019,7 @@ async function fetchInstagramProfile(userId, forceRefresh = false) {
   // Revisar cache (si no fuerza refresh y cache tiene username)
   const cached = igProfileCache.get(userId);
   if (!forceRefresh && cached && (Date.now() - cached.ts < IG_PROFILE_CACHE_TTL) && cached.username) {
-    return { name: cached.name, username: cached.username };
+    return { name: cached.name, username: cached.username, profilePic: cached.profilePic };
   }
 
   const igToken = process.env.INSTAGRAM_ACCESS_TOKEN || '';
@@ -2283,13 +2283,17 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                     updates.push('ig_username = ?');
                     vals.push(profile.username);
                   }
+                  if (profile.profilePic) {
+                    updates.push('profile_pic_url = ?');
+                    vals.push(profile.profilePic);
+                  }
                   vals.push(sessionId);
                   pool.query(`UPDATE chat_sessions SET ${updates.join(', ')} WHERE id = ?`, vals)
                     .catch(e => logger.error({ e }, 'Error updating IG profile async'));
-                  // Notificar al frontend del nombre actualizado
+                  // Notificar al frontend del nombre y foto actualizada
                   if (global.io) {
                     global.io.of('/chat').to('dashboard_all').emit('contact_name_update', {
-                      phone: from, sessionId, contactName: profile.name, igUsername: profile.username || null
+                      phone: from, sessionId, contactName: profile.name, igUsername: profile.username || null, profilePic: profile.profilePic || null
                     });
                   }
                 }
