@@ -19,7 +19,7 @@ class ChannelAdapters {
         apiVersion: process.env.GRAPH_API_VERSION || 'v22.0'
       },
       instagram: {
-        accessToken: process.env.INSTAGRAM_ACCESS_TOKEN || '',
+        accessToken: process.env.INSTAGRAM_ACCESS_TOKEN || process.env.META_ACCESS_TOKEN || '',
         igId: process.env.INSTAGRAM_BUSINESS_ID || ''
       },
       messenger: {
@@ -149,7 +149,7 @@ class ChannelAdapters {
       return `ig_simulated_${Date.now()}`;
     }
 
-    const url = `https://graph.instagram.com/v22.0/${igId}/messages`;
+    const url = `https://graph.facebook.com/v22.0/${igId}/messages`;
 
     const payload = {
       recipient: { id: userId },
