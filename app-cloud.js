@@ -659,6 +659,37 @@ await conn.query(`
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
+    // Tabla para comentarios de Instagram
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS instagram_comments (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        comment_id VARCHAR(64) NOT NULL COMMENT 'ID del comentario en Instagram',
+        parent_comment_id VARCHAR(64) NULL COMMENT 'ID del comentario padre (si es respuesta)',
+        media_id VARCHAR(64) NOT NULL COMMENT 'ID del media/post en Instagram',
+        media_product_type VARCHAR(32) NULL COMMENT 'FEED, REELS, AD, STORY',
+        ad_id VARCHAR(64) NULL COMMENT 'ID del anuncio (si aplica)',
+        ad_title VARCHAR(255) NULL COMMENT 'Título del anuncio (si aplica)',
+        from_id VARCHAR(64) NOT NULL COMMENT 'IGSID del usuario que comentó',
+        from_username VARCHAR(100) NULL COMMENT '@username del usuario',
+        text TEXT NOT NULL COMMENT 'Texto del comentario',
+        media_url TEXT NULL COMMENT 'URL de la imagen/video del post',
+        media_caption TEXT NULL COMMENT 'Caption del post',
+        media_permalink TEXT NULL COMMENT 'Link permanente al post',
+        media_type VARCHAR(32) NULL COMMENT 'IMAGE, VIDEO, CAROUSEL_ALBUM',
+        replied BOOLEAN DEFAULT FALSE COMMENT 'Si ya se respondió desde el panel',
+        reply_text TEXT NULL COMMENT 'Texto de la respuesta enviada',
+        replied_at TIMESTAMP NULL COMMENT 'Cuándo se respondió',
+        replied_by VARCHAR(100) NULL COMMENT 'Agente que respondió',
+        hidden BOOLEAN DEFAULT FALSE COMMENT 'Si el comentario fue ocultado',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_comment_id (comment_id),
+        INDEX idx_media_id (media_id),
+        INDEX idx_from_id (from_id),
+        INDEX idx_replied (replied),
+        INDEX idx_created (created_at DESC)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
     logger.info('✅ Esquema de base de datos verificado/actualizado');
   } catch (err) {
     logger.error({ err }, 'Error en ensureSchema');
@@ -1056,6 +1087,34 @@ async function fetchInstagramProfile(userId, forceRefresh = false) {
     }
   }
   return { name: null, username: null };
+}
+
+/**
+ * Obtener info de un media de Instagram (imagen, caption, permalink)
+ */
+async function fetchMediaInfo(mediaId) {
+  const igToken = process.env.INSTAGRAM_ACCESS_TOKEN || '';
+  if (!igToken) return null;
+
+  try {
+    const url = `https://graph.instagram.com/v22.0/${mediaId}?fields=caption,media_url,thumbnail_url,media_type,permalink&access_token=${igToken}`;
+    const r = await fetch(url);
+    if (!r.ok) {
+      logger.warn({ mediaId, status: r.status }, 'Failed to fetch Instagram media info');
+      return null;
+    }
+    const data = await r.json();
+    return {
+      caption: data.caption || null,
+      media_url: data.media_url || null,
+      thumbnail_url: data.thumbnail_url || null,
+      media_type: data.media_type || null,
+      permalink: data.permalink || null
+    };
+  } catch (err) {
+    logger.error({ err, mediaId }, 'Error fetching Instagram media info');
+    return null;
+  }
 }
 
 /* ========= Auth Panel (dual-mode: JWT + Basic + API Key + legacy env) ========= */
@@ -2021,9 +2080,58 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         // Instagram comments/mentions llegan en entry.changes[] (no en messaging[])
         const changes = Array.isArray(entry.changes) ? entry.changes : [];
         for (const change of changes) {
-          const field = change.field; // 'comments', 'live_comments', 'message_reactions', etc.
-          logger.info({ channel, field, value: JSON.stringify(change.value).slice(0, 500) }, '💬 Instagram change event');
-          // TODO: procesar comentarios aquí cuando se implemente el apartado
+          const field = change.field;
+          const val = change.value || {};
+          logger.info({ channel, field, value: JSON.stringify(val).slice(0, 500) }, '💬 Instagram change event');
+
+          // Guardar comentarios en BD
+          if (field === 'comments' || field === 'live_comments') {
+            try {
+              const commentId = val.id || val.comment_id;
+              const parentId = val.parent_id || null;
+              const mediaId = val.media?.id || null;
+              const mediaProductType = val.media?.media_product_type || null;
+              const adId = val.media?.ad_id || null;
+              const adTitle = val.media?.ad_title || null;
+              const fromId = val.from?.id || null;
+              const fromUsername = val.from?.username || null;
+              const text = val.text || '';
+
+              if (commentId && fromId) {
+                // Insertar comentario (ignorar duplicados)
+                await pool.query(`
+                  INSERT IGNORE INTO instagram_comments
+                    (comment_id, parent_comment_id, media_id, media_product_type, ad_id, ad_title, from_id, from_username, text)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                `, [commentId, parentId, mediaId, mediaProductType, adId, adTitle, fromId, fromUsername, text]);
+
+                // Intentar obtener info del media (thumbnail, caption, permalink)
+                if (mediaId) {
+                  fetchMediaInfo(mediaId).then(mediaInfo => {
+                    if (mediaInfo) {
+                      pool.query(`
+                        UPDATE instagram_comments
+                        SET media_url = ?, media_caption = ?, media_permalink = ?, media_type = ?
+                        WHERE comment_id = ?
+                      `, [mediaInfo.media_url || mediaInfo.thumbnail_url, mediaInfo.caption, mediaInfo.permalink, mediaInfo.media_type, commentId]);
+                    }
+                  }).catch(e => logger.warn({ e: e.message }, 'No se pudo obtener info del media'));
+                }
+
+                // Emitir a dashboard via Socket.IO
+                if (global.io) {
+                  global.io.of('/chat').to('dashboard_all').emit('new_ig_comment', {
+                    commentId, parentId, mediaId, mediaProductType, adId, adTitle,
+                    fromId, fromUsername, text, createdAt: new Date().toISOString()
+                  });
+                }
+
+                logger.info({ commentId, fromUsername, mediaId, text: text.slice(0, 100) }, '💬 Comentario Instagram guardado');
+              }
+            } catch (e) {
+              logger.error({ e: e.message, change: JSON.stringify(change.value).slice(0, 300) }, '❌ Error procesando comentario Instagram');
+            }
+          }
         }
 
         // Instagram y Messenger usan entry.messaging[] para DMs
@@ -2598,6 +2706,232 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 /* ========= API Routes ========= */
+
+// ─── Instagram Comments ───
+
+// Listar comentarios de Instagram
+app.get('/api/instagram/comments', panelAuth, async (req, res) => {
+  try {
+    const { mediaId, replied, limit = 50, offset = 0 } = req.query;
+    let where = '1=1';
+    const params = [];
+
+    if (mediaId) {
+      where += ' AND media_id = ?';
+      params.push(mediaId);
+    }
+    if (replied === 'true') {
+      where += ' AND replied = TRUE';
+    } else if (replied === 'false') {
+      where += ' AND replied = FALSE';
+    }
+
+    const [rows] = await pool.query(
+      `SELECT * FROM instagram_comments WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      [...params, parseInt(limit), parseInt(offset)]
+    );
+
+    const [countResult] = await pool.query(
+      `SELECT COUNT(*) as total FROM instagram_comments WHERE ${where}`,
+      params
+    );
+
+    res.json({ ok: true, comments: rows, total: countResult[0].total });
+  } catch (e) {
+    logger.error({ e: e.message }, 'GET /api/instagram/comments');
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Obtener posts únicos con conteo de comentarios
+app.get('/api/instagram/comments/posts', panelAuth, async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT media_id, media_product_type, media_url, media_caption, media_permalink, media_type,
+             ad_id, ad_title,
+             COUNT(*) as comment_count,
+             SUM(CASE WHEN replied = FALSE THEN 1 ELSE 0 END) as unreplied_count,
+             MAX(created_at) as last_comment_at
+      FROM instagram_comments
+      GROUP BY media_id
+      ORDER BY last_comment_at DESC
+    `);
+    res.json({ ok: true, posts: rows });
+  } catch (e) {
+    logger.error({ e: e.message }, 'GET /api/instagram/comments/posts');
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Responder a un comentario
+app.post('/api/instagram/comments/:commentId/reply', panelAuth, async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { message } = req.body;
+
+    if (!message) return res.status(400).json({ ok: false, error: 'Falta message' });
+
+    const igToken = process.env.INSTAGRAM_ACCESS_TOKEN || '';
+    if (!igToken) return res.status(400).json({ ok: false, error: 'No hay token Instagram configurado' });
+
+    // Responder via Instagram API
+    const url = `https://graph.instagram.com/v22.0/${commentId}/replies`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${igToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ message })
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(`Instagram API error: ${JSON.stringify(data)}`);
+    }
+
+    // Actualizar en BD
+    const agentName = req.agent?.name || req.agent?.username || 'Panel';
+    await pool.query(`
+      UPDATE instagram_comments
+      SET replied = TRUE, reply_text = ?, replied_at = NOW(), replied_by = ?
+      WHERE comment_id = ?
+    `, [message, agentName, commentId]);
+
+    // Emitir actualización via Socket.IO
+    if (global.io) {
+      global.io.of('/chat').to('dashboard_all').emit('ig_comment_replied', {
+        commentId, replyText: message, repliedBy: agentName, repliedAt: new Date().toISOString(),
+        replyId: data.id
+      });
+    }
+
+    logger.info({ commentId, replyId: data.id, agent: agentName }, '💬 Respuesta a comentario Instagram enviada');
+    res.json({ ok: true, replyId: data.id });
+  } catch (e) {
+    logger.error({ e: e.message }, 'POST /api/instagram/comments/:commentId/reply');
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Ocultar/mostrar un comentario
+app.post('/api/instagram/comments/:commentId/hide', panelAuth, async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { hide = true } = req.body;
+
+    const igToken = process.env.INSTAGRAM_ACCESS_TOKEN || '';
+    if (!igToken) return res.status(400).json({ ok: false, error: 'No hay token Instagram configurado' });
+
+    const url = `https://graph.instagram.com/v22.0/${commentId}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${igToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ hide })
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(`Instagram API error: ${JSON.stringify(data)}`);
+    }
+
+    await pool.query('UPDATE instagram_comments SET hidden = ? WHERE comment_id = ?', [hide, commentId]);
+
+    res.json({ ok: true, hidden: hide });
+  } catch (e) {
+    logger.error({ e: e.message }, 'POST /api/instagram/comments/:commentId/hide');
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Eliminar un comentario
+app.delete('/api/instagram/comments/:commentId', panelAuth, async (req, res) => {
+  try {
+    const { commentId } = req.params;
+
+    const igToken = process.env.INSTAGRAM_ACCESS_TOKEN || '';
+    if (!igToken) return res.status(400).json({ ok: false, error: 'No hay token Instagram configurado' });
+
+    const url = `https://graph.instagram.com/v22.0/${commentId}`;
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${igToken}` }
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(`Instagram API error: ${JSON.stringify(data)}`);
+    }
+
+    await pool.query('DELETE FROM instagram_comments WHERE comment_id = ?', [commentId]);
+
+    if (global.io) {
+      global.io.of('/chat').to('dashboard_all').emit('ig_comment_deleted', { commentId });
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    logger.error({ e: e.message }, 'DELETE /api/instagram/comments/:commentId');
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Responder en privado (DM) a un comentario
+app.post('/api/instagram/comments/:commentId/private-reply', panelAuth, async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { message } = req.body;
+
+    if (!message) return res.status(400).json({ ok: false, error: 'Falta message' });
+
+    const igToken = process.env.INSTAGRAM_ACCESS_TOKEN || '';
+    const igId = process.env.INSTAGRAM_BUSINESS_ID || '';
+    if (!igToken || !igId) return res.status(400).json({ ok: false, error: 'No hay token/ID Instagram configurado' });
+
+    // POST /{ig-id}/messages con recipient.comment_id
+    const url = `https://graph.instagram.com/v22.0/${igId}/messages`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${igToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        recipient: { comment_id: commentId },
+        message: { text: message }
+      })
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(`Instagram API error: ${JSON.stringify(data)}`);
+    }
+
+    // Marcar como respondido en privado
+    const agentName = req.agent?.name || req.agent?.username || 'Panel';
+    await pool.query(`
+      UPDATE instagram_comments
+      SET replied = TRUE, reply_text = CONCAT('[DM] ', ?), replied_at = NOW(), replied_by = ?
+      WHERE comment_id = ?
+    `, [message, agentName, commentId]);
+
+    if (global.io) {
+      global.io.of('/chat').to('dashboard_all').emit('ig_comment_replied', {
+        commentId, replyText: `[DM] ${message}`, repliedBy: agentName, repliedAt: new Date().toISOString(),
+        replyId: data.message_id, isPrivate: true
+      });
+    }
+
+    logger.info({ commentId, messageId: data.message_id, agent: agentName }, '💬 Respuesta privada a comentario Instagram enviada');
+    res.json({ ok: true, messageId: data.message_id, recipientId: data.recipient_id });
+  } catch (e) {
+    logger.error({ e: e.message }, 'POST /api/instagram/comments/:commentId/private-reply');
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
 
 // FAQ ingest (guardar snippet pregunta/respuesta)
 app.post('/api/faq/ingest', async (req, res) => {

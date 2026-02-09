@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import {
   LayoutDashboard,
   MessageSquare,
+  MessageCircle,
   GitBranch,
   LogOut,
   Bot,
@@ -26,6 +27,7 @@ export default function Layout() {
   const navItems = [
     { to: '/dashboard', icon: LayoutDashboard, label: t('nav.dashboard') },
     { to: '/conversations', icon: MessageSquare, label: t('nav.conversations') },
+    { to: '/instagram-comments', icon: MessageCircle, label: 'IG Comentarios' },
     ...(isSupervisor ? [
       { to: '/agents', icon: UserCog, label: t('nav.agents') },
       { to: '/departments', icon: Building2, label: t('nav.departments') },

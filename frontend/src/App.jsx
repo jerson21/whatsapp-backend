@@ -13,6 +13,7 @@ import FlowMonitor from './pages/FlowMonitor'
 import AgentManagement from './pages/AgentManagement'
 import DepartmentManagement from './pages/DepartmentManagement'
 import LearningPage from './pages/LearningPage'
+import InstagramComments from './pages/InstagramComments'
 
 function PrivateRoute({ children }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
@@ -52,6 +53,7 @@ export default function App() {
         <Route path="analytics" element={<SupervisorRoute><Analytics /></SupervisorRoute>} />
         <Route path="monitor" element={<SupervisorRoute><FlowMonitor /></SupervisorRoute>} />
         <Route path="learning" element={<SupervisorRoute><LearningPage /></SupervisorRoute>} />
+        <Route path="instagram-comments" element={<InstagramComments />} />
       </Route>
 
       {/* Fallback */}
