@@ -2004,6 +2004,10 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     const entries = Array.isArray(body.entry) ? body.entry : [];
     if (!entries.length) return res.sendStatus(200);
 
+    // Responder 200 INMEDIATAMENTE a Meta (best practice)
+    // Procesar mensajes en background para evitar timeouts
+    res.sendStatus(200);
+
     for (const entry of entries) {
       // 🌐 MULTICANAL: Extraer mensajes según la estructura del canal
       let messages = [];
@@ -2537,10 +2541,11 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         }
     }
 
-    return res.sendStatus(200);
+    // (200 ya fue enviado arriba)
   } catch (e) {
     logger.error({ e }, 'POST /webhook');
-    return res.sendStatus(500);
+    // Si el 200 ya fue enviado, no podemos responder 500
+    // Solo logueamos el error
   }
 });
 
