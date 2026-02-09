@@ -202,8 +202,9 @@ class ChannelDetector {
    */
   static normalizeInstagram(message) {
     // Instagram usa estructura similar a Messenger
+    // message = evt completo: { sender, recipient, timestamp, message: { mid, text, ... } }
     const from = message.sender.id;
-    const messageId = message.mid;
+    const messageId = message.message?.mid || message.mid;
 
     let text = message.message?.text || '';
     let mediaType = null;
@@ -245,7 +246,7 @@ class ChannelDetector {
    */
   static normalizeMessenger(message) {
     const from = message.sender.id;
-    const messageId = message.mid;
+    const messageId = message.message?.mid || message.mid;
 
     let text = message.message?.text || '';
     let mediaType = null;

@@ -2016,24 +2016,31 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       if (channel === 'instagram' || channel === 'messenger') {
         // Instagram y Messenger usan entry.messaging[]
         const messagingEvents = Array.isArray(entry.messaging) ? entry.messaging : [];
+        logger.info({ channel, eventsCount: messagingEvents.length }, '📨 Instagram/Messenger webhook events');
         for (const evt of messagingEvents) {
+          // Log detallado de cada evento para debug
+          const evtType = evt.message?.is_echo ? 'echo' : evt.read ? 'read' : evt.delivery ? 'delivery' : evt.message ? 'message' : evt.postback ? 'postback' : evt.reaction ? 'reaction' : 'unknown';
+          logger.info({ channel, evtType, senderId: evt.sender?.id, mid: evt.message?.mid, hasText: !!evt.message?.text, hasAttachments: !!evt.message?.attachments, keys: Object.keys(evt) }, '📨 Evento webhook detalle');
+
           if (evt.message?.is_echo) {
-            // Echo = mensaje enviado por nuestra página desde la app nativa
             echoMessages.push(evt);
           } else if (evt.read) {
-            // Read receipt: el usuario leyó nuestro mensaje
             const mid = evt.read.mid;
             if (mid) {
               statuses.push({ id: mid, status: 'read' });
             }
           } else if (evt.delivery) {
-            // Delivery receipt (Messenger): mensaje entregado
             const mids = evt.delivery?.mids || [];
             for (const mid of mids) {
               statuses.push({ id: mid, status: 'delivered' });
             }
+          } else if (evt.reaction) {
+            // Reacciones de Instagram - loguear por ahora
+            logger.info({ reaction: evt.reaction, senderId: evt.sender?.id }, '📨 Instagram reaction (no procesada aún)');
           } else if (evt.message || evt.postback) {
             messages.push(evt);
+          } else {
+            logger.warn({ evtKeys: Object.keys(evt), evt: JSON.stringify(evt).slice(0, 500) }, '📨 Evento Instagram NO RECONOCIDO');
           }
         }
       } else {
