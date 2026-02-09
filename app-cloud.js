@@ -1291,6 +1291,52 @@ async function findLeastBusyAgent(departmentId) {
   }
 }
 
+/* ========= Instagram OAuth (temporal) ========= */
+const IG_APP_ID = '1245299903905813';
+const IG_APP_SECRET = process.env.INSTAGRAM_APP_SECRET || '';
+const IG_REDIRECT_URI = 'https://whatsapp.respaldoschile.cl/auth/instagram/callback';
+
+// Paso 1: Redirige a Instagram para autorizar
+app.get('/auth/instagram', (req, res) => {
+  const url = `https://www.instagram.com/oauth/authorize?client_id=${IG_APP_ID}&redirect_uri=${encodeURIComponent(IG_REDIRECT_URI)}&scope=instagram_business_basic,instagram_business_manage_messages&response_type=code`;
+  res.redirect(url);
+});
+
+// Paso 2: Callback - intercambia code por token
+app.get('/auth/instagram/callback', async (req, res) => {
+  const { code, error: authError } = req.query;
+  if (authError || !code) return res.status(400).send(`Error: ${authError || 'no code received'}`);
+  try {
+    // Intercambiar code por short-lived token
+    const tokenRes = await fetch('https://api.instagram.com/oauth/access_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: IG_APP_ID,
+        client_secret: IG_APP_SECRET,
+        grant_type: 'authorization_code',
+        redirect_uri: IG_REDIRECT_URI,
+        code
+      })
+    });
+    const tokenData = await tokenRes.json();
+    if (!tokenData.access_token) return res.status(400).json({ error: 'No token received', detail: tokenData });
+
+    // Intercambiar short-lived por long-lived token (60 días)
+    const longRes = await fetch(`https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${IG_APP_SECRET}&access_token=${tokenData.access_token}`);
+    const longData = await longRes.json();
+
+    res.send(`<h2>Token generado</h2>
+      <p><b>Short-lived token:</b><br><textarea cols=80 rows=3>${tokenData.access_token}</textarea></p>
+      <p><b>User ID:</b> ${tokenData.user_id}</p>
+      <p><b>Long-lived token (60 días):</b><br><textarea cols=80 rows=3>${longData.access_token || 'ERROR: ' + JSON.stringify(longData)}</textarea></p>
+      <p><b>Expira en:</b> ${longData.expires_in ? Math.round(longData.expires_in/86400) + ' días' : 'N/A'}</p>
+      <p>Copia el long-lived token y ponlo como INSTAGRAM_ACCESS_TOKEN en tu .env</p>`);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ========= Auth Endpoints ========= */
 // POST /api/auth/login - Login de agentes
 app.post('/api/auth/login', express.json(), async (req, res) => {
