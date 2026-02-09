@@ -336,8 +336,9 @@ export default function Conversations() {
   const typingTimeoutRef = useRef(null)
   const handleInputChange = (e) => {
     setNewMessage(e.target.value)
-    // Enviar typing_start al socket (debounced cada 3s)
-    if (socket && selectedSessionId && e.target.value.trim()) {
+    if (!socket || !selectedSessionId) return
+    if (e.target.value.trim()) {
+      // Enviar typing_start (debounced cada 3s)
       if (!typingTimeoutRef.current) {
         socket.emit('typing_start', { sessionId: selectedSessionId })
       }
@@ -345,6 +346,11 @@ export default function Conversations() {
       typingTimeoutRef.current = setTimeout(() => {
         typingTimeoutRef.current = null
       }, 3000)
+    } else if (typingTimeoutRef.current) {
+      // Borro todo el texto: parar typing
+      clearTimeout(typingTimeoutRef.current)
+      typingTimeoutRef.current = null
+      socket.emit('typing_stop', { sessionId: selectedSessionId })
     }
   }
 

@@ -7043,6 +7043,30 @@ chatNamespace.on('connection', (socket) => {
       }
     });
 
+    // Typing stop: Instagram/Messenger soportan typing_off
+    socket.on('typing_stop', async (data) => {
+      if (!data?.sessionId) return;
+      try {
+        const [rows] = await pool.query(
+          'SELECT phone, channel FROM chat_sessions WHERE id = ?', [data.sessionId]
+        );
+        if (!rows.length) return;
+        const { phone, channel } = rows[0];
+        if (channel === 'instagram' || channel === 'messenger') {
+          const igToken = channelAdapters?.config?.instagram?.accessToken || process.env.INSTAGRAM_ACCESS_TOKEN;
+          const igId = process.env.INSTAGRAM_BUSINESS_ID;
+          if (igToken && igId) {
+            fetch(`https://graph.instagram.com/v22.0/${igId}/messages`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${igToken}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ recipient: { id: phone }, sender_action: 'typing_off' })
+            }).catch(() => {});
+          }
+        }
+        // WhatsApp no tiene typing_off, se auto-expira
+      } catch (_) {}
+    });
+
     socket.on('disconnect', () => {
       if (socket.agentId) {
         agentPresence.delete(socket.agentId);
