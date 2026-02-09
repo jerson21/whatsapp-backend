@@ -1191,6 +1191,25 @@ async function checkCommentTriggers(commentId, commentText, mediaId, fromUsernam
           const recipient = (source === 'story_replies' && fromId)
             ? { id: fromId }
             : { comment_id: commentId };
+
+          // Typing indicator + delay humanizado para no parecer bot
+          const typingRecipientId = fromId || null;
+          if (typingRecipientId) {
+            try {
+              await fetch(url, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${igToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ recipient: { id: typingRecipientId }, sender_action: 'typing_on' })
+              });
+            } catch (_) { /* best-effort */ }
+          }
+          // Delay realista basado en longitud del mensaje (1.5s - 8s)
+          const charCount = (trigger.response_message || '').length;
+          const baseDelay = (charCount / 3.5) * 1000;
+          const variation = baseDelay * (0.8 + Math.random() * 0.4);
+          const delay = Math.min(8000, Math.max(1500, Math.round(variation)));
+          await new Promise(r => setTimeout(r, delay));
+
           const response = await fetch(url, {
             method: 'POST',
             headers: {
@@ -1208,7 +1227,13 @@ async function checkCommentTriggers(commentId, commentText, mediaId, fromUsernam
             continue;
           }
         } else {
-          // Respuesta pública
+          // Respuesta pública - delay humanizado (no hay typing para comentarios públicos)
+          const charCount = (trigger.response_message || '').length;
+          const baseDelay = (charCount / 3.5) * 1000;
+          const variation = baseDelay * (0.8 + Math.random() * 0.4);
+          const pubDelay = Math.min(8000, Math.max(2000, Math.round(variation)));
+          await new Promise(r => setTimeout(r, pubDelay));
+
           const url = `https://graph.instagram.com/v22.0/${commentId}/replies`;
           const response = await fetch(url, {
             method: 'POST',
@@ -2272,7 +2297,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                 logger.info({ commentId, fromUsername, mediaId, text: text.slice(0, 100) }, '💬 Comentario Instagram guardado');
 
                 // Comment Triggers: verificar auto-reply (async, no bloquea)
-                checkCommentTriggers(commentId, text, mediaId, fromUsername)
+                checkCommentTriggers(commentId, text, mediaId, fromUsername, 'comments', fromId)
                   .catch(e => logger.warn({ e: e.message }, 'Error en checkCommentTriggers'));
               }
             } catch (e) {
