@@ -690,6 +690,24 @@ await conn.query(`
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
+    // ─── Comment Triggers (auto-reply a comentarios por keyword) ───
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS instagram_comment_triggers (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL COMMENT 'Nombre del trigger',
+        keywords TEXT NOT NULL COMMENT 'Palabras clave separadas por coma',
+        response_message TEXT NOT NULL COMMENT 'Mensaje de respuesta automática',
+        reply_type ENUM('private','public') DEFAULT 'private' COMMENT 'DM o respuesta pública',
+        is_active BOOLEAN DEFAULT TRUE,
+        match_type ENUM('contains','exact') DEFAULT 'contains' COMMENT 'Tipo de coincidencia',
+        only_media_id VARCHAR(64) NULL COMMENT 'Solo aplicar a este post (null = todos)',
+        trigger_count INT DEFAULT 0 COMMENT 'Veces disparado',
+        created_by VARCHAR(100) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
     logger.info('✅ Esquema de base de datos verificado/actualizado');
   } catch (err) {
     logger.error({ err }, 'Error en ensureSchema');
@@ -1114,6 +1132,116 @@ async function fetchMediaInfo(mediaId) {
   } catch (err) {
     logger.error({ err, mediaId }, 'Error fetching Instagram media info');
     return null;
+  }
+}
+
+// ─── Comment Trigger: auto-reply por keyword ───
+async function checkCommentTriggers(commentId, commentText, mediaId, fromUsername) {
+  try {
+    const igToken = process.env.INSTAGRAM_ACCESS_TOKEN || '';
+    const igId = process.env.INSTAGRAM_BUSINESS_ID || '';
+    if (!igToken || !igId) return;
+
+    // Obtener triggers activos
+    const [triggers] = await pool.query(
+      'SELECT * FROM instagram_comment_triggers WHERE is_active = TRUE'
+    );
+    if (!triggers.length) return;
+
+    const textLower = (commentText || '').toLowerCase().trim();
+
+    for (const trigger of triggers) {
+      // Verificar si aplica solo a un media_id específico
+      if (trigger.only_media_id && trigger.only_media_id !== mediaId) continue;
+
+      // Parsear keywords (separadas por coma)
+      const keywords = trigger.keywords.split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
+
+      let matched = false;
+      for (const kw of keywords) {
+        if (trigger.match_type === 'exact') {
+          if (textLower === kw) { matched = true; break; }
+        } else {
+          // contains
+          if (textLower.includes(kw)) { matched = true; break; }
+        }
+      }
+
+      if (!matched) continue;
+
+      logger.info({ commentId, trigger: trigger.name, keyword: keywords.join(','), fromUsername },
+        '🎯 Comment trigger matched!');
+
+      try {
+        if (trigger.reply_type === 'private') {
+          // DM privado via comment_id
+          const url = `https://graph.instagram.com/v22.0/${igId}/messages`;
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${igToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              recipient: { comment_id: commentId },
+              message: { text: trigger.response_message }
+            })
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            logger.warn({ commentId, trigger: trigger.name, error: data }, '⚠️ Error enviando DM auto-reply');
+            continue;
+          }
+        } else {
+          // Respuesta pública
+          const url = `https://graph.instagram.com/v22.0/${commentId}/replies`;
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${igToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ message: trigger.response_message })
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            logger.warn({ commentId, trigger: trigger.name, error: data }, '⚠️ Error enviando reply público auto');
+            continue;
+          }
+        }
+
+        // Marcar comentario como respondido + incrementar contador del trigger
+        const replyLabel = trigger.reply_type === 'private'
+          ? `[DM] [Auto: ${trigger.name}] ${trigger.response_message}`
+          : `[Auto: ${trigger.name}] ${trigger.response_message}`;
+
+        await pool.query(
+          `UPDATE instagram_comments SET replied = TRUE, reply_text = ?, replied_at = NOW(), replied_by = ? WHERE comment_id = ?`,
+          [replyLabel, `Bot (${trigger.name})`, commentId]
+        );
+        await pool.query(
+          'UPDATE instagram_comment_triggers SET trigger_count = trigger_count + 1 WHERE id = ?',
+          [trigger.id]
+        );
+
+        // Emitir via Socket.IO
+        if (global.io) {
+          global.io.of('/chat').to('dashboard_all').emit('ig_comment_replied', {
+            commentId, replyText: replyLabel, repliedBy: `Bot (${trigger.name})`, repliedAt: new Date().toISOString()
+          });
+        }
+
+        logger.info({ commentId, trigger: trigger.name, type: trigger.reply_type },
+          '✅ Comment trigger auto-reply enviado');
+
+        // Solo ejecutar el primer trigger que haga match
+        break;
+      } catch (triggerErr) {
+        logger.error({ e: triggerErr.message, trigger: trigger.name }, '❌ Error ejecutando comment trigger');
+      }
+    }
+  } catch (e) {
+    logger.error({ e: e.message }, '❌ Error en checkCommentTriggers');
   }
 }
 
@@ -2127,6 +2255,10 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                 }
 
                 logger.info({ commentId, fromUsername, mediaId, text: text.slice(0, 100) }, '💬 Comentario Instagram guardado');
+
+                // Comment Triggers: verificar auto-reply (async, no bloquea)
+                checkCommentTriggers(commentId, text, mediaId, fromUsername)
+                  .catch(e => logger.warn({ e: e.message }, 'Error en checkCommentTriggers'));
               }
             } catch (e) {
               logger.error({ e: e.message, change: JSON.stringify(change.value).slice(0, 300) }, '❌ Error procesando comentario Instagram');
@@ -2712,13 +2844,17 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Listar comentarios de Instagram
 app.get('/api/instagram/comments', panelAuth, async (req, res) => {
   try {
-    const { mediaId, replied, limit = 50, offset = 0 } = req.query;
+    const { mediaId, fromId, replied, limit = 50, offset = 0 } = req.query;
     let where = '1=1';
     const params = [];
 
     if (mediaId) {
       where += ' AND media_id = ?';
       params.push(mediaId);
+    }
+    if (fromId) {
+      where += ' AND from_id = ?';
+      params.push(fromId);
     }
     if (replied === 'true') {
       where += ' AND replied = TRUE';
@@ -2765,6 +2901,26 @@ app.get('/api/instagram/comments/posts', panelAuth, async (req, res) => {
     res.json({ ok: true, posts: rows });
   } catch (e) {
     logger.error({ e: e.message }, 'GET /api/instagram/comments/posts');
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Obtener clientes únicos con conteo de comentarios
+app.get('/api/instagram/comments/commenters', panelAuth, async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT from_id, ANY_VALUE(from_username) as from_username,
+             COUNT(*) as comment_count,
+             SUM(CASE WHEN replied = FALSE THEN 1 ELSE 0 END) as unreplied_count,
+             COUNT(DISTINCT media_id) as posts_count,
+             MAX(created_at) as last_comment_at
+      FROM instagram_comments
+      GROUP BY from_id
+      ORDER BY last_comment_at DESC
+    `);
+    res.json({ ok: true, commenters: rows });
+  } catch (e) {
+    logger.error({ e: e.message }, 'GET /api/instagram/comments/commenters');
     res.status(500).json({ ok: false, error: e.message });
   }
 });
@@ -2935,6 +3091,85 @@ app.post('/api/instagram/comments/:commentId/private-reply', panelAuth, async (r
     res.json({ ok: true, messageId: data.message_id, recipientId: data.recipient_id });
   } catch (e) {
     logger.error({ e: e.message }, 'POST /api/instagram/comments/:commentId/private-reply');
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ─── Comment Triggers CRUD ───
+
+// Listar todos los triggers
+app.get('/api/instagram/triggers', panelAuth, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT * FROM instagram_comment_triggers ORDER BY created_at DESC'
+    );
+    res.json({ ok: true, triggers: rows });
+  } catch (e) {
+    logger.error({ e: e.message }, 'GET /api/instagram/triggers');
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Crear trigger
+app.post('/api/instagram/triggers', panelAuth, async (req, res) => {
+  try {
+    const { name, keywords, response_message, reply_type = 'private', match_type = 'contains', only_media_id = null } = req.body;
+
+    if (!name || !keywords || !response_message) {
+      return res.status(400).json({ ok: false, error: 'Faltan campos: name, keywords, response_message' });
+    }
+
+    const agentName = req.agent?.name || req.agent?.username || 'Panel';
+    const [result] = await pool.query(
+      `INSERT INTO instagram_comment_triggers (name, keywords, response_message, reply_type, match_type, only_media_id, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [name, keywords, response_message, reply_type, match_type, only_media_id, agentName]
+    );
+
+    res.json({ ok: true, id: result.insertId });
+  } catch (e) {
+    logger.error({ e: e.message }, 'POST /api/instagram/triggers');
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Actualizar trigger
+app.put('/api/instagram/triggers/:id', panelAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, keywords, response_message, reply_type, match_type, only_media_id, is_active } = req.body;
+
+    const fields = [];
+    const params = [];
+
+    if (name !== undefined) { fields.push('name = ?'); params.push(name); }
+    if (keywords !== undefined) { fields.push('keywords = ?'); params.push(keywords); }
+    if (response_message !== undefined) { fields.push('response_message = ?'); params.push(response_message); }
+    if (reply_type !== undefined) { fields.push('reply_type = ?'); params.push(reply_type); }
+    if (match_type !== undefined) { fields.push('match_type = ?'); params.push(match_type); }
+    if (only_media_id !== undefined) { fields.push('only_media_id = ?'); params.push(only_media_id || null); }
+    if (is_active !== undefined) { fields.push('is_active = ?'); params.push(is_active); }
+
+    if (!fields.length) return res.status(400).json({ ok: false, error: 'Nada que actualizar' });
+
+    params.push(id);
+    await pool.query(`UPDATE instagram_comment_triggers SET ${fields.join(', ')} WHERE id = ?`, params);
+
+    res.json({ ok: true });
+  } catch (e) {
+    logger.error({ e: e.message }, 'PUT /api/instagram/triggers/:id');
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Eliminar trigger
+app.delete('/api/instagram/triggers/:id', panelAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query('DELETE FROM instagram_comment_triggers WHERE id = ?', [id]);
+    res.json({ ok: true });
+  } catch (e) {
+    logger.error({ e: e.message }, 'DELETE /api/instagram/triggers/:id');
     res.status(500).json({ ok: false, error: e.message });
   }
 });

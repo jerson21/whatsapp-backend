@@ -16,7 +16,14 @@ import {
   CheckCircle,
   AlertCircle,
   Mail,
-  Globe
+  Globe,
+  Users,
+  Zap,
+  Plus,
+  Edit3,
+  ToggleLeft,
+  ToggleRight,
+  Hash
 } from 'lucide-react'
 
 function InstagramIcon({ className }) {
@@ -85,6 +92,12 @@ export default function InstagramComments() {
   const [replyText, setReplyText] = useState('')
   const [sending, setSending] = useState(false)
   const [filter, setFilter] = useState('all') // all, unreplied, replied
+  const [groupBy, setGroupBy] = useState('posts') // 'posts' | 'commenters'
+  const [commenters, setCommenters] = useState([])
+  const [selectedCommenter, setSelectedCommenter] = useState(null)
+  const [activeTab, setActiveTab] = useState('comments') // 'comments' | 'triggers'
+  const [triggers, setTriggers] = useState([])
+  const [triggerForm, setTriggerForm] = useState(null) // null = closed, {} = new, {id:...} = editing
   const { socket } = useSocket('/chat')
 
   // Cargar posts
@@ -100,11 +113,26 @@ export default function InstagramComments() {
     }
   }, [])
 
-  // Cargar comentarios de un post
-  const loadComments = useCallback(async (mediaId) => {
+  // Cargar commenters
+  const loadCommenters = useCallback(async () => {
+    try {
+      const res = await fetch('/api/instagram/comments/commenters', { headers: getHeaders() })
+      const data = await res.json()
+      if (data.ok) setCommenters(data.commenters)
+    } catch (e) {
+      console.error('Error loading commenters:', e)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  // Cargar comentarios de un post o commenter
+  const loadComments = useCallback(async (mediaId, fromId) => {
     try {
       const replied = filter === 'replied' ? 'true' : filter === 'unreplied' ? 'false' : ''
-      const params = new URLSearchParams({ mediaId, limit: '200' })
+      const params = new URLSearchParams({ limit: '200' })
+      if (mediaId) params.set('mediaId', mediaId)
+      if (fromId) params.set('fromId', fromId)
       if (replied) params.set('replied', replied)
       const res = await fetch(`/api/instagram/comments?${params}`, { headers: getHeaders() })
       const data = await res.json()
@@ -115,21 +143,26 @@ export default function InstagramComments() {
   }, [filter])
 
   useEffect(() => {
-    loadPosts()
-  }, [loadPosts])
+    setLoading(true)
+    if (groupBy === 'posts') loadPosts()
+    else loadCommenters()
+  }, [groupBy, loadPosts, loadCommenters])
 
   useEffect(() => {
-    if (selectedPost) loadComments(selectedPost.media_id)
-  }, [selectedPost, loadComments])
+    if (groupBy === 'posts' && selectedPost) loadComments(selectedPost.media_id, null)
+    else if (groupBy === 'commenters' && selectedCommenter) loadComments(null, selectedCommenter.from_id)
+  }, [selectedPost, selectedCommenter, groupBy, loadComments])
 
   // Socket.IO: nuevo comentario
   useEffect(() => {
     if (!socket) return
     const handleNew = (data) => {
-      // Recargar posts para actualizar conteos
-      loadPosts()
-      // Si estamos viendo el post de este comentario, agregar
-      if (selectedPost && data.mediaId === selectedPost.media_id) {
+      // Recargar lista para actualizar conteos
+      if (groupBy === 'posts') loadPosts()
+      else loadCommenters()
+      // Si estamos viendo el post/commenter de este comentario, agregar
+      if ((groupBy === 'posts' && selectedPost && data.mediaId === selectedPost.media_id) ||
+          (groupBy === 'commenters' && selectedCommenter && data.fromId === selectedCommenter.from_id)) {
         setComments(prev => [{
           comment_id: data.commentId,
           parent_comment_id: data.parentId,
@@ -152,11 +185,13 @@ export default function InstagramComments() {
           ? { ...c, replied: true, reply_text: data.replyText, replied_by: data.repliedBy, replied_at: data.repliedAt }
           : c
       ))
-      loadPosts()
+      if (groupBy === 'posts') loadPosts()
+      else loadCommenters()
     }
     const handleDeleted = (data) => {
       setComments(prev => prev.filter(c => c.comment_id !== data.commentId))
-      loadPosts()
+      if (groupBy === 'posts') loadPosts()
+      else loadCommenters()
     }
     socket.on('new_ig_comment', handleNew)
     socket.on('ig_comment_replied', handleReplied)
@@ -166,7 +201,7 @@ export default function InstagramComments() {
       socket.off('ig_comment_replied', handleReplied)
       socket.off('ig_comment_deleted', handleDeleted)
     }
-  }, [socket, selectedPost, loadPosts])
+  }, [socket, selectedPost, selectedCommenter, groupBy, loadPosts, loadCommenters])
 
   // Responder a un comentario (público o privado)
   const handleReply = async (commentId) => {
@@ -225,12 +260,354 @@ export default function InstagramComments() {
     }
   }
 
-  const totalUnreplied = posts.reduce((sum, p) => sum + (parseInt(p.unreplied_count) || 0), 0)
+  // ─── Triggers ───
+  const loadTriggers = useCallback(async () => {
+    try {
+      const res = await fetch('/api/instagram/triggers', { headers: getHeaders() })
+      const data = await res.json()
+      if (data.ok) setTriggers(data.triggers)
+    } catch (e) {
+      console.error('Error loading triggers:', e)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (activeTab === 'triggers') loadTriggers()
+  }, [activeTab, loadTriggers])
+
+  const saveTrigger = async () => {
+    if (!triggerForm) return
+    const { id, name, keywords, response_message, reply_type, match_type } = triggerForm
+    if (!name?.trim() || !keywords?.trim() || !response_message?.trim()) {
+      alert('Completa todos los campos')
+      return
+    }
+    try {
+      const method = id ? 'PUT' : 'POST'
+      const url = id ? `/api/instagram/triggers/${id}` : '/api/instagram/triggers'
+      const res = await fetch(url, {
+        method,
+        headers: getHeaders(),
+        body: JSON.stringify({ name, keywords, response_message, reply_type: reply_type || 'private', match_type: match_type || 'contains' })
+      })
+      const data = await res.json()
+      if (data.ok) {
+        setTriggerForm(null)
+        loadTriggers()
+      } else {
+        alert(`Error: ${data.error}`)
+      }
+    } catch (e) {
+      alert(`Error: ${e.message}`)
+    }
+  }
+
+  const toggleTrigger = async (trigger) => {
+    try {
+      await fetch(`/api/instagram/triggers/${trigger.id}`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify({ is_active: !trigger.is_active })
+      })
+      loadTriggers()
+    } catch (e) {
+      alert(`Error: ${e.message}`)
+    }
+  }
+
+  const deleteTrigger = async (id) => {
+    if (!confirm('Eliminar este trigger?')) return
+    try {
+      await fetch(`/api/instagram/triggers/${id}`, { method: 'DELETE', headers: getHeaders() })
+      loadTriggers()
+    } catch (e) {
+      alert(`Error: ${e.message}`)
+    }
+  }
+
+  const totalUnreplied = groupBy === 'posts'
+    ? posts.reduce((sum, p) => sum + (parseInt(p.unreplied_count) || 0), 0)
+    : commenters.reduce((sum, c) => sum + (parseInt(c.unreplied_count) || 0), 0)
 
   return (
-    <div className="h-full flex">
+    <div className="h-full flex flex-col">
+      {/* Tabs superiores */}
+      <div className="bg-white border-b border-gray-200 px-4 flex items-center gap-1">
+        <button
+          onClick={() => setActiveTab('comments')}
+          className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition ${
+            activeTab === 'comments'
+              ? 'border-pink-500 text-pink-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <MessageCircle className="w-4 h-4" />
+          Comentarios
+          {totalUnreplied > 0 && (
+            <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">{totalUnreplied}</span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('triggers')}
+          className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition ${
+            activeTab === 'triggers'
+              ? 'border-amber-500 text-amber-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Zap className="w-4 h-4" />
+          Triggers
+          {triggers.filter(t => t.is_active).length > 0 && (
+            <span className="bg-amber-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
+              {triggers.filter(t => t.is_active).length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {activeTab === 'triggers' ? (
+        /* ═══ Vista Triggers ═══ */
+        <div className="flex-1 flex overflow-hidden">
+          {/* Lista de triggers */}
+          <div className={`${triggerForm ? 'hidden md:flex' : 'flex'} w-full md:w-96 flex-col border-r border-gray-200 bg-white`}>
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Zap className="w-5 h-5 text-amber-500" />
+                <h2 className="text-lg font-bold text-gray-800">Comment Triggers</h2>
+              </div>
+              <button
+                onClick={() => setTriggerForm({ name: '', keywords: '', response_message: '', reply_type: 'private', match_type: 'contains' })}
+                className="flex items-center gap-1 px-3 py-1.5 bg-amber-500 text-white text-sm font-medium rounded-lg hover:bg-amber-600 transition"
+              >
+                <Plus className="w-4 h-4" /> Nuevo
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              {triggers.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-64 text-gray-400 px-4">
+                  <Zap className="w-12 h-12 mb-3" />
+                  <p className="text-center font-medium">No hay triggers</p>
+                  <p className="text-xs text-center mt-1">Crea uno para auto-responder cuando alguien comente una palabra clave</p>
+                </div>
+              ) : (
+                triggers.map(trigger => (
+                  <div
+                    key={trigger.id}
+                    className={`p-4 border-b border-gray-100 ${!trigger.is_active ? 'opacity-50' : ''}`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${trigger.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
+                        <span className="text-sm font-medium text-gray-800">{trigger.name}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => toggleTrigger(trigger)}
+                          className="p-1 text-gray-400 hover:text-amber-500 transition"
+                          title={trigger.is_active ? 'Desactivar' : 'Activar'}
+                        >
+                          {trigger.is_active
+                            ? <ToggleRight className="w-5 h-5 text-green-500" />
+                            : <ToggleLeft className="w-5 h-5" />
+                          }
+                        </button>
+                        <button
+                          onClick={() => setTriggerForm({
+                            id: trigger.id,
+                            name: trigger.name,
+                            keywords: trigger.keywords,
+                            response_message: trigger.response_message,
+                            reply_type: trigger.reply_type,
+                            match_type: trigger.match_type
+                          })}
+                          className="p-1 text-gray-400 hover:text-blue-500 transition"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => deleteTrigger(trigger.id)}
+                          className="p-1 text-gray-400 hover:text-red-500 transition"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Keywords */}
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {trigger.keywords.split(',').map((kw, i) => (
+                        <span key={i} className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700">
+                          <Hash className="w-2.5 h-2.5" />{kw.trim()}
+                        </span>
+                      ))}
+                    </div>
+
+                    {/* Response preview */}
+                    <p className="text-xs text-gray-500 truncate">{trigger.response_message}</p>
+
+                    <div className="flex items-center gap-3 mt-2">
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                        trigger.reply_type === 'private' ? 'bg-indigo-100 text-indigo-700' : 'bg-pink-100 text-pink-700'
+                      }`}>
+                        {trigger.reply_type === 'private' ? <><Mail className="w-3 h-3" /> DM</> : <><Globe className="w-3 h-3" /> Publica</>}
+                      </span>
+                      <span className="text-xs text-gray-400">
+                        {trigger.trigger_count || 0} veces
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Panel derecho: formulario o info */}
+          <div className={`${triggerForm ? 'flex' : 'hidden md:flex'} flex-1 flex-col bg-gray-50`}>
+            {triggerForm ? (
+              <div className="p-6 max-w-lg mx-auto w-full">
+                <div className="flex items-center gap-2 mb-6">
+                  <button
+                    onClick={() => setTriggerForm(null)}
+                    className="md:hidden p-1 text-gray-400 hover:text-gray-600"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <Zap className="w-5 h-5 text-amber-500" />
+                  <h3 className="text-lg font-bold text-gray-800">
+                    {triggerForm.id ? 'Editar Trigger' : 'Nuevo Trigger'}
+                  </h3>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+                    <input
+                      type="text"
+                      value={triggerForm.name}
+                      onChange={e => setTriggerForm({ ...triggerForm, name: e.target.value })}
+                      placeholder="Ej: Enviar precio"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Palabras clave <span className="text-gray-400 font-normal">(separadas por coma)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={triggerForm.keywords}
+                      onChange={e => setTriggerForm({ ...triggerForm, keywords: e.target.value })}
+                      placeholder="Ej: precio, cuanto cuesta, costo, info"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-amber-400"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">Si el comentario contiene alguna de estas palabras, se activa el trigger</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Mensaje de respuesta</label>
+                    <textarea
+                      value={triggerForm.response_message}
+                      onChange={e => setTriggerForm({ ...triggerForm, response_message: e.target.value })}
+                      placeholder="Ej: Hola! Te envio la info por DM. Nuestros precios son..."
+                      rows={4}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-amber-400 resize-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de respuesta</label>
+                      <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+                        <button
+                          onClick={() => setTriggerForm({ ...triggerForm, reply_type: 'private' })}
+                          className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition ${
+                            triggerForm.reply_type === 'private' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500'
+                          }`}
+                        >
+                          <Mail className="w-3 h-3" /> DM
+                        </button>
+                        <button
+                          onClick={() => setTriggerForm({ ...triggerForm, reply_type: 'public' })}
+                          className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition ${
+                            triggerForm.reply_type === 'public' ? 'bg-white text-pink-600 shadow-sm' : 'text-gray-500'
+                          }`}
+                        >
+                          <Globe className="w-3 h-3" /> Publica
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Coincidencia</label>
+                      <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+                        <button
+                          onClick={() => setTriggerForm({ ...triggerForm, match_type: 'contains' })}
+                          className={`flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition ${
+                            triggerForm.match_type === 'contains' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'
+                          }`}
+                        >
+                          Contiene
+                        </button>
+                        <button
+                          onClick={() => setTriggerForm({ ...triggerForm, match_type: 'exact' })}
+                          className={`flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition ${
+                            triggerForm.match_type === 'exact' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'
+                          }`}
+                        >
+                          Exacto
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {triggerForm.reply_type === 'private' && (
+                    <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3">
+                      <p className="text-xs text-indigo-600">
+                        <strong>DM Privado:</strong> Instagram permite 1 solo mensaje privado por comentario, dentro de los 7 dias del comentario.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={saveTrigger}
+                      className="flex-1 px-4 py-2 bg-amber-500 text-white font-medium rounded-lg hover:bg-amber-600 transition"
+                    >
+                      {triggerForm.id ? 'Guardar cambios' : 'Crear trigger'}
+                    </button>
+                    <button
+                      onClick={() => setTriggerForm(null)}
+                      className="px-4 py-2 bg-gray-100 text-gray-600 font-medium rounded-lg hover:bg-gray-200 transition"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+                <Zap className="w-16 h-16 mb-4 text-amber-300" />
+                <p className="text-lg font-medium text-gray-500">Comment Triggers</p>
+                <p className="text-sm mt-1 text-center px-8">
+                  Responde automaticamente por DM cuando alguien comenta una palabra clave en tus posts
+                </p>
+                <button
+                  onClick={() => setTriggerForm({ name: '', keywords: '', response_message: '', reply_type: 'private', match_type: 'contains' })}
+                  className="mt-4 flex items-center gap-2 px-4 py-2 bg-amber-500 text-white font-medium rounded-lg hover:bg-amber-600 transition"
+                >
+                  <Plus className="w-4 h-4" /> Crear primer trigger
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+      /* ═══ Vista Comentarios ═══ */
+      <div className="flex-1 flex overflow-hidden">
       {/* Panel izquierdo: Lista de posts */}
-      <div className={`${selectedPost ? 'hidden md:flex' : 'flex'} w-full md:w-96 flex-col border-r border-gray-200 bg-white`}>
+      <div className={`${(selectedPost || selectedCommenter) ? 'hidden md:flex' : 'flex'} w-full md:w-96 flex-col border-r border-gray-200 bg-white`}>
         {/* Header */}
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-3">
@@ -244,26 +621,93 @@ export default function InstagramComments() {
               )}
             </div>
             <button
-              onClick={() => { setLoading(true); loadPosts() }}
+              onClick={() => { setLoading(true); groupBy === 'posts' ? loadPosts() : loadCommenters() }}
               className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
+
+          {/* Toggle Por Post / Por Cliente */}
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+            <button
+              onClick={() => { setGroupBy('posts'); setSelectedCommenter(null); setComments([]) }}
+              className={`flex-1 flex items-center justify-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium transition ${
+                groupBy === 'posts' ? 'bg-white text-pink-600 shadow-sm' : 'text-gray-500'
+              }`}
+            >
+              <ImageIcon className="w-3 h-3" /> Por Post
+            </button>
+            <button
+              onClick={() => { setGroupBy('commenters'); setSelectedPost(null); setComments([]) }}
+              className={`flex-1 flex items-center justify-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium transition ${
+                groupBy === 'commenters' ? 'bg-white text-pink-600 shadow-sm' : 'text-gray-500'
+              }`}
+            >
+              <Users className="w-3 h-3" /> Por Cliente
+            </button>
+          </div>
         </div>
 
-        {/* Lista de posts */}
+        {/* Lista de posts / commenters */}
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center h-32">
               <RefreshCw className="w-6 h-6 text-gray-300 animate-spin" />
             </div>
-          ) : posts.length === 0 ? (
+          ) : groupBy === 'posts' && posts.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-gray-400 px-4">
               <MessageCircle className="w-12 h-12 mb-3" />
               <p className="text-center">No hay comentarios todavia</p>
               <p className="text-xs text-center mt-1">Los comentarios de Instagram apareceran aqui</p>
             </div>
+          ) : groupBy === 'commenters' && commenters.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-gray-400 px-4">
+              <Users className="w-12 h-12 mb-3" />
+              <p className="text-center">No hay comentaristas todavia</p>
+              <p className="text-xs text-center mt-1">Los usuarios que comentan apareceran aqui</p>
+            </div>
+          ) : groupBy === 'commenters' ? (
+            commenters.map(commenter => (
+              <button
+                key={commenter.from_id}
+                onClick={() => setSelectedCommenter(commenter)}
+                className={`w-full text-left p-4 border-b border-gray-100 hover:bg-gray-50 transition ${
+                  selectedCommenter?.from_id === commenter.from_id ? 'bg-pink-50 border-l-4 border-l-pink-500' : ''
+                }`}
+              >
+                <div className="flex gap-3">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0">
+                    <span className="text-white text-sm font-bold">
+                      {(commenter.from_username || '?')[0].toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800">
+                      @{commenter.from_username || commenter.from_id}
+                    </p>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="text-xs text-gray-500">
+                        {commenter.comment_count} comentario{commenter.comment_count != 1 ? 's' : ''}
+                      </span>
+                      <span className="text-xs text-gray-400">
+                        en {commenter.posts_count} post{commenter.posts_count != 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      {parseInt(commenter.unreplied_count) > 0 && (
+                        <span className="text-xs font-medium text-red-500">
+                          {commenter.unreplied_count} sin responder
+                        </span>
+                      )}
+                      <span className="text-xs text-gray-400">
+                        {timeAgo(commenter.last_comment_at)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </button>
+            ))
           ) : (
             posts.map(post => (
               <button
@@ -317,49 +761,69 @@ export default function InstagramComments() {
       </div>
 
       {/* Panel derecho: Comentarios del post seleccionado */}
-      <div className={`${selectedPost ? 'flex' : 'hidden md:flex'} flex-1 flex-col bg-gray-50`}>
-        {selectedPost ? (
+      <div className={`${(selectedPost || selectedCommenter) ? 'flex' : 'hidden md:flex'} flex-1 flex-col bg-gray-50`}>
+        {(selectedPost || selectedCommenter) ? (
           <>
             {/* Header del post */}
             <div className="p-4 bg-white border-b border-gray-200">
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => setSelectedPost(null)}
+                  onClick={() => { setSelectedPost(null); setSelectedCommenter(null); setComments([]) }}
                   className="md:hidden p-1 text-gray-400 hover:text-gray-600"
                 >
                   <ChevronLeft className="w-5 h-5" />
                 </button>
 
-                {selectedPost.media_url ? (
-                  <img src={selectedPost.media_url} alt="" className="w-12 h-12 rounded-lg object-cover" />
+                {selectedCommenter ? (
+                  <>
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+                      <span className="text-white font-bold">
+                        {(selectedCommenter.from_username || '?')[0].toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800">
+                        @{selectedCommenter.from_username || selectedCommenter.from_id}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {selectedCommenter.comment_count} comentarios en {selectedCommenter.posts_count} posts
+                      </p>
+                    </div>
+                  </>
                 ) : (
-                  <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center">
-                    <InstagramIcon className="w-5 h-5 text-white" />
-                  </div>
-                )}
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <MediaTypeBadge type={selectedPost.media_product_type} adId={selectedPost.ad_id} />
-                    {selectedPost.ad_title && (
-                      <span className="text-xs text-amber-600 font-medium truncate">{selectedPost.ad_title}</span>
+                  <>
+                    {selectedPost.media_url ? (
+                      <img src={selectedPost.media_url} alt="" className="w-12 h-12 rounded-lg object-cover" />
+                    ) : (
+                      <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center">
+                        <InstagramIcon className="w-5 h-5 text-white" />
+                      </div>
                     )}
-                  </div>
-                  <p className="text-sm text-gray-600 truncate mt-0.5">
-                    {selectedPost.media_caption || 'Sin caption'}
-                  </p>
-                </div>
 
-                {selectedPost.media_permalink && (
-                  <a
-                    href={selectedPost.media_permalink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-2 text-gray-400 hover:text-pink-500 hover:bg-pink-50 rounded-lg transition"
-                    title="Ver en Instagram"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <MediaTypeBadge type={selectedPost.media_product_type} adId={selectedPost.ad_id} />
+                        {selectedPost.ad_title && (
+                          <span className="text-xs text-amber-600 font-medium truncate">{selectedPost.ad_title}</span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-600 truncate mt-0.5">
+                        {selectedPost.media_caption || 'Sin caption'}
+                      </p>
+                    </div>
+
+                    {selectedPost.media_permalink && (
+                      <a
+                        href={selectedPost.media_permalink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2 text-gray-400 hover:text-pink-500 hover:bg-pink-50 rounded-lg transition"
+                        title="Ver en Instagram"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    )}
+                  </>
                 )}
               </div>
 
@@ -556,10 +1020,14 @@ export default function InstagramComments() {
           <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
             <InstagramIcon className="w-16 h-16 mb-4 text-pink-300" />
             <p className="text-lg font-medium text-gray-500">Comentarios de Instagram</p>
-            <p className="text-sm mt-1">Selecciona un post para ver sus comentarios</p>
+            <p className="text-sm mt-1">
+              {groupBy === 'posts' ? 'Selecciona un post para ver sus comentarios' : 'Selecciona un cliente para ver sus comentarios'}
+            </p>
           </div>
         )}
       </div>
+      </div>
+      )}
     </div>
   )
 }
