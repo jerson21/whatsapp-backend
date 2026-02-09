@@ -1011,7 +1011,7 @@ async function fetchInstagramProfile(userId, forceRefresh = false) {
     return { name: cached.name, username: cached.username };
   }
 
-  const token = process.env.INSTAGRAM_PAGE_ACCESS_TOKEN || META_ACCESS_TOKEN;
+  const token = process.env.INSTAGRAM_ACCESS_TOKEN || META_ACCESS_TOKEN;
   if (!token) {
     logger.warn('No access token available for Instagram profile lookup');
     return { name: null, username: null };
