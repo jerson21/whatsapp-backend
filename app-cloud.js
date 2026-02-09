@@ -648,6 +648,17 @@ await conn.query(`
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
+    // Tabla para tokens que se auto-renuevan (Instagram, etc.)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS system_tokens (
+        token_key VARCHAR(64) PRIMARY KEY,
+        token_value TEXT NOT NULL,
+        expires_at TIMESTAMP NULL,
+        refreshed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
     logger.info('✅ Esquema de base de datos verificado/actualizado');
   } catch (err) {
     logger.error({ err }, 'Error en ensureSchema');
@@ -6388,6 +6399,11 @@ httpServer.listen(PORT, async () => {
     if (queuesInitialized) {
       logger.info('✅ Sistema de colas inicializado (Redis + Bull MQ)');
     }
+
+    // Inicializar auto-renovación de token de Instagram
+    await channelAdapters.initTokenRenewal().catch(e => {
+      logger.warn({ e }, '⚠️ No se pudo iniciar auto-renovación de token Instagram');
+    });
 
     // Jobs periodicos del sistema de aprendizaje
     if (String(process.env.LEARNING_ENABLED || 'false').toLowerCase() === 'true') {

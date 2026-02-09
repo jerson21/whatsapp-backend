@@ -265,6 +265,97 @@ class ChannelAdapters {
     this.logger.debug({ userId, text }, 'Tester message - will be saved by simulator');
     return `tester_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
+
+  // ─── Auto-renovación de token Instagram ───
+
+  /**
+   * Inicializar: carga token de BD (si existe) y programa renovación semanal
+   */
+  async initTokenRenewal() {
+    try {
+      const saved = await this._loadToken('instagram_access_token');
+      if (saved) {
+        this.config.instagram.accessToken = saved.token;
+        this.logger.info({ expiresAt: saved.expiresAt, refreshedAt: saved.refreshedAt },
+          '✅ Token Instagram cargado desde BD');
+      }
+    } catch (e) {
+      this.logger.warn({ e: e.message }, 'No se pudo cargar token Instagram de BD, usando .env');
+    }
+
+    // Renovar cada 7 días (el token dura 60 días, así queda margen de sobra)
+    const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+    this._renewalTimer = setInterval(() => this.refreshInstagramToken(), SEVEN_DAYS);
+
+    // Intentar renovar ahora si el token tiene más de 7 días sin renovarse
+    try {
+      const saved = await this._loadToken('instagram_access_token');
+      if (saved && saved.refreshedAt) {
+        const daysSinceRefresh = (Date.now() - new Date(saved.refreshedAt).getTime()) / 86400000;
+        if (daysSinceRefresh >= 7) {
+          this.logger.info(`Token Instagram tiene ${Math.round(daysSinceRefresh)} días sin renovar, renovando ahora...`);
+          await this.refreshInstagramToken();
+        }
+      }
+    } catch (e) { /* silencioso - se renovará en el próximo ciclo */ }
+
+    this.logger.info('✅ Auto-renovación de token Instagram programada (cada 7 días)');
+  }
+
+  /**
+   * Renovar el token llamando a la API de Instagram
+   */
+  async refreshInstagramToken() {
+    const currentToken = this.config.instagram.accessToken;
+    if (!currentToken) {
+      this.logger.warn('No hay token Instagram para renovar');
+      return;
+    }
+
+    try {
+      const url = `https://graph.instagram.com/refresh_access_token`
+        + `?grant_type=ig_refresh_token`
+        + `&access_token=${currentToken}`;
+
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (!res.ok || !data.access_token) {
+        throw new Error(JSON.stringify(data.error || data));
+      }
+
+      // Actualizar en memoria
+      this.config.instagram.accessToken = data.access_token;
+
+      // Guardar en BD con fecha de expiración
+      const expiresAt = data.expires_in
+        ? new Date(Date.now() + data.expires_in * 1000)
+        : new Date(Date.now() + 60 * 86400000); // 60 días por defecto
+
+      await this._saveToken('instagram_access_token', data.access_token, expiresAt);
+
+      this.logger.info({ expiresIn: `${Math.round((data.expires_in || 5184000) / 86400)} días` },
+        '✅ Token Instagram renovado exitosamente');
+    } catch (error) {
+      this.logger.error({ error: error.message }, '❌ Error renovando token Instagram');
+    }
+  }
+
+  async _loadToken(key) {
+    const [rows] = await this.db.query(
+      'SELECT token_value, expires_at, refreshed_at FROM system_tokens WHERE token_key = ?', [key]
+    );
+    if (!rows.length) return null;
+    return { token: rows[0].token_value, expiresAt: rows[0].expires_at, refreshedAt: rows[0].refreshed_at };
+  }
+
+  async _saveToken(key, value, expiresAt) {
+    await this.db.query(`
+      INSERT INTO system_tokens (token_key, token_value, expires_at, refreshed_at)
+      VALUES (?, ?, ?, NOW())
+      ON DUPLICATE KEY UPDATE token_value = VALUES(token_value), expires_at = VALUES(expires_at), refreshed_at = NOW()
+    `, [key, value, expiresAt]);
+  }
 }
 
 module.exports = ChannelAdapters;
