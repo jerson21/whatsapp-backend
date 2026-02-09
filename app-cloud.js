@@ -2018,7 +2018,15 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       let echoMessages = [];
 
       if (channel === 'instagram' || channel === 'messenger') {
-        // Instagram y Messenger usan entry.messaging[]
+        // Instagram comments/mentions llegan en entry.changes[] (no en messaging[])
+        const changes = Array.isArray(entry.changes) ? entry.changes : [];
+        for (const change of changes) {
+          const field = change.field; // 'comments', 'live_comments', 'message_reactions', etc.
+          logger.info({ channel, field, value: JSON.stringify(change.value).slice(0, 500) }, '💬 Instagram change event');
+          // TODO: procesar comentarios aquí cuando se implemente el apartado
+        }
+
+        // Instagram y Messenger usan entry.messaging[] para DMs
         const messagingEvents = Array.isArray(entry.messaging) ? entry.messaging : [];
         logger.info({ channel, eventsCount: messagingEvents.length }, '📨 Instagram/Messenger webhook events');
         for (const evt of messagingEvents) {
