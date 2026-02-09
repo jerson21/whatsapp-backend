@@ -1144,7 +1144,7 @@ async function fetchMediaInfo(mediaId) {
 }
 
 // ─── Comment Trigger: auto-reply por keyword ───
-async function checkCommentTriggers(commentId, commentText, mediaId, fromUsername, source = 'comments') {
+async function checkCommentTriggers(commentId, commentText, mediaId, fromUsername, source = 'comments', fromId = null) {
   try {
     const igToken = process.env.INSTAGRAM_ACCESS_TOKEN || '';
     const igId = process.env.INSTAGRAM_BUSINESS_ID || '';
@@ -1186,8 +1186,11 @@ async function checkCommentTriggers(commentId, commentText, mediaId, fromUsernam
 
       try {
         if (trigger.reply_type === 'private') {
-          // DM privado via comment_id
+          // DM privado: para story replies usar recipient.id, para comentarios usar recipient.comment_id
           const url = `https://graph.instagram.com/v22.0/${igId}/messages`;
+          const recipient = (source === 'story_replies' && fromId)
+            ? { id: fromId }
+            : { comment_id: commentId };
           const response = await fetch(url, {
             method: 'POST',
             headers: {
@@ -1195,7 +1198,7 @@ async function checkCommentTriggers(commentId, commentText, mediaId, fromUsernam
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              recipient: { comment_id: commentId },
+              recipient,
               message: { text: trigger.response_message }
             })
           });
@@ -2326,7 +2329,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               }
 
               // Verificar triggers de tipo story_replies
-              checkCommentTriggers(msgId, text, storyMediaId, null, 'story_replies')
+              checkCommentTriggers(msgId, text, storyMediaId, null, 'story_replies', fromId)
                 .catch(e => logger.warn({ e: e.message }, 'Error en checkCommentTriggers (story)'));
 
               logger.info({ fromId, storyMediaId, text: text.slice(0, 100) }, '📖 Story reply guardada en comentarios');
