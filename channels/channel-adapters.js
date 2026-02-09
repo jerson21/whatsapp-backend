@@ -149,7 +149,7 @@ class ChannelAdapters {
       return `ig_simulated_${Date.now()}`;
     }
 
-    const url = `https://graph.facebook.com/v22.0/${igId}/messages`;
+    const url = `https://graph.instagram.com/v22.0/${igId}/messages`;
 
     const payload = {
       recipient: { id: userId },
