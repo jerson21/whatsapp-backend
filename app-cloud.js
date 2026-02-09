@@ -2747,8 +2747,14 @@ app.get('/api/instagram/comments', panelAuth, async (req, res) => {
 app.get('/api/instagram/comments/posts', panelAuth, async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT media_id, media_product_type, media_url, media_caption, media_permalink, media_type,
-             ad_id, ad_title,
+      SELECT media_id,
+             ANY_VALUE(media_product_type) as media_product_type,
+             ANY_VALUE(media_url) as media_url,
+             ANY_VALUE(media_caption) as media_caption,
+             ANY_VALUE(media_permalink) as media_permalink,
+             ANY_VALUE(media_type) as media_type,
+             ANY_VALUE(ad_id) as ad_id,
+             ANY_VALUE(ad_title) as ad_title,
              COUNT(*) as comment_count,
              SUM(CASE WHEN replied = FALSE THEN 1 ELSE 0 END) as unreplied_count,
              MAX(created_at) as last_comment_at
