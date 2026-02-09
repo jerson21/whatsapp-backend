@@ -708,6 +708,14 @@ await conn.query(`
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
+    // Migraciones incrementales (ALTER TABLE con try/catch)
+    try {
+      await conn.query(`ALTER TABLE instagram_comment_triggers ADD COLUMN trigger_source ENUM('comments','story_replies','both') DEFAULT 'both' COMMENT 'Aplica a comentarios, story replies o ambos'`);
+      logger.info('✅ Columna trigger_source agregada a instagram_comment_triggers');
+    } catch (e) {
+      if (!e.message.includes('Duplicate column')) throw e;
+    }
+
     logger.info('✅ Esquema de base de datos verificado/actualizado');
   } catch (err) {
     logger.error({ err }, 'Error en ensureSchema');
@@ -1136,15 +1144,16 @@ async function fetchMediaInfo(mediaId) {
 }
 
 // ─── Comment Trigger: auto-reply por keyword ───
-async function checkCommentTriggers(commentId, commentText, mediaId, fromUsername) {
+async function checkCommentTriggers(commentId, commentText, mediaId, fromUsername, source = 'comments') {
   try {
     const igToken = process.env.INSTAGRAM_ACCESS_TOKEN || '';
     const igId = process.env.INSTAGRAM_BUSINESS_ID || '';
     if (!igToken || !igId) return;
 
-    // Obtener triggers activos
+    // Obtener triggers activos que apliquen a esta fuente
     const [triggers] = await pool.query(
-      'SELECT * FROM instagram_comment_triggers WHERE is_active = TRUE'
+      'SELECT * FROM instagram_comment_triggers WHERE is_active = TRUE AND (trigger_source = ? OR trigger_source = ?)',
+      [source, 'both']
     );
     if (!triggers.length) return;
 
@@ -1169,7 +1178,10 @@ async function checkCommentTriggers(commentId, commentText, mediaId, fromUsernam
 
       if (!matched) continue;
 
-      logger.info({ commentId, trigger: trigger.name, keyword: keywords.join(','), fromUsername },
+      // Story replies solo pueden ser DM (no se puede responder públicamente a una story)
+      if (source === 'story_replies' && trigger.reply_type === 'public') continue;
+
+      logger.info({ commentId, trigger: trigger.name, keyword: keywords.join(','), fromUsername, source },
         '🎯 Comment trigger matched!');
 
       try {
@@ -2241,7 +2253,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                         UPDATE instagram_comments
                         SET media_url = ?, media_caption = ?, media_permalink = ?, media_type = ?
                         WHERE comment_id = ?
-                      `, [mediaInfo.media_url || mediaInfo.thumbnail_url, mediaInfo.caption, mediaInfo.permalink, mediaInfo.media_type, commentId]);
+                      `, [mediaInfo.media_type === 'VIDEO' ? (mediaInfo.thumbnail_url || mediaInfo.media_url) : (mediaInfo.media_url || mediaInfo.thumbnail_url), mediaInfo.caption, mediaInfo.permalink, mediaInfo.media_type, commentId]);
                     }
                   }).catch(e => logger.warn({ e: e.message }, 'No se pudo obtener info del media'));
                 }
@@ -2289,6 +2301,41 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           } else if (evt.reaction) {
             // Reacciones de Instagram - loguear por ahora
             logger.info({ reaction: evt.reaction, senderId: evt.sender?.id }, '📨 Instagram reaction (no procesada aún)');
+          } else if (channel === 'instagram' && evt.message && evt.message.reply_to?.story) {
+            // Story reply: guardar en instagram_comments como STORY + seguir como DM
+            try {
+              const storyReply = evt.message.reply_to.story;
+              const fromId = evt.sender?.id;
+              const text = evt.message.text || '[Media]';
+              const storyMediaId = storyReply.id || `story_${Date.now()}`;
+              const storyUrl = storyReply.url || null;
+              const msgId = evt.message.mid;
+
+              await pool.query(`
+                INSERT IGNORE INTO instagram_comments
+                  (comment_id, media_id, media_product_type, from_id, text, media_url)
+                VALUES (?, ?, 'STORY', ?, ?, ?)
+              `, [msgId, storyMediaId, fromId, text, storyUrl]);
+
+              // Emitir a dashboard
+              if (global.io) {
+                global.io.of('/chat').to('dashboard_all').emit('new_ig_comment', {
+                  commentId: msgId, mediaId: storyMediaId, mediaProductType: 'STORY',
+                  fromId, text, createdAt: new Date().toISOString()
+                });
+              }
+
+              // Verificar triggers de tipo story_replies
+              checkCommentTriggers(msgId, text, storyMediaId, null, 'story_replies')
+                .catch(e => logger.warn({ e: e.message }, 'Error en checkCommentTriggers (story)'));
+
+              logger.info({ fromId, storyMediaId, text: text.slice(0, 100) }, '📖 Story reply guardada en comentarios');
+            } catch (e) {
+              logger.error({ e: e.message }, '❌ Error procesando story reply');
+            }
+
+            // TAMBIÉN pasar al flujo DM normal para continuar conversación
+            messages.push(evt);
           } else if (evt.message || evt.postback) {
             messages.push(evt);
           } else {
@@ -3113,7 +3160,7 @@ app.get('/api/instagram/triggers', panelAuth, async (req, res) => {
 // Crear trigger
 app.post('/api/instagram/triggers', panelAuth, async (req, res) => {
   try {
-    const { name, keywords, response_message, reply_type = 'private', match_type = 'contains', only_media_id = null } = req.body;
+    const { name, keywords, response_message, reply_type = 'private', match_type = 'contains', only_media_id = null, trigger_source = 'both' } = req.body;
 
     if (!name || !keywords || !response_message) {
       return res.status(400).json({ ok: false, error: 'Faltan campos: name, keywords, response_message' });
@@ -3121,9 +3168,9 @@ app.post('/api/instagram/triggers', panelAuth, async (req, res) => {
 
     const agentName = req.agent?.name || req.agent?.username || 'Panel';
     const [result] = await pool.query(
-      `INSERT INTO instagram_comment_triggers (name, keywords, response_message, reply_type, match_type, only_media_id, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [name, keywords, response_message, reply_type, match_type, only_media_id, agentName]
+      `INSERT INTO instagram_comment_triggers (name, keywords, response_message, reply_type, match_type, only_media_id, trigger_source, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [name, keywords, response_message, reply_type, match_type, only_media_id, trigger_source, agentName]
     );
 
     res.json({ ok: true, id: result.insertId });
@@ -3137,7 +3184,7 @@ app.post('/api/instagram/triggers', panelAuth, async (req, res) => {
 app.put('/api/instagram/triggers/:id', panelAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, keywords, response_message, reply_type, match_type, only_media_id, is_active } = req.body;
+    const { name, keywords, response_message, reply_type, match_type, only_media_id, is_active, trigger_source } = req.body;
 
     const fields = [];
     const params = [];
@@ -3149,6 +3196,7 @@ app.put('/api/instagram/triggers/:id', panelAuth, async (req, res) => {
     if (match_type !== undefined) { fields.push('match_type = ?'); params.push(match_type); }
     if (only_media_id !== undefined) { fields.push('only_media_id = ?'); params.push(only_media_id || null); }
     if (is_active !== undefined) { fields.push('is_active = ?'); params.push(is_active); }
+    if (trigger_source !== undefined) { fields.push('trigger_source = ?'); params.push(trigger_source); }
 
     if (!fields.length) return res.status(400).json({ ok: false, error: 'Nada que actualizar' });
 

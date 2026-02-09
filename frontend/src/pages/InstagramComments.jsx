@@ -63,6 +63,12 @@ function MediaTypeBadge({ type, adId }) {
           <Film className="w-3 h-3" /> Reel
         </span>
       )
+    case 'STORY':
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+          <AlertCircle className="w-3 h-3" /> Story
+        </span>
+      )
     default:
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
@@ -277,7 +283,7 @@ export default function InstagramComments() {
 
   const saveTrigger = async () => {
     if (!triggerForm) return
-    const { id, name, keywords, response_message, reply_type, match_type } = triggerForm
+    const { id, name, keywords, response_message, reply_type, match_type, trigger_source } = triggerForm
     if (!name?.trim() || !keywords?.trim() || !response_message?.trim()) {
       alert('Completa todos los campos')
       return
@@ -288,7 +294,7 @@ export default function InstagramComments() {
       const res = await fetch(url, {
         method,
         headers: getHeaders(),
-        body: JSON.stringify({ name, keywords, response_message, reply_type: reply_type || 'private', match_type: match_type || 'contains' })
+        body: JSON.stringify({ name, keywords, response_message, reply_type: reply_type || 'private', match_type: match_type || 'contains', trigger_source: trigger_source || 'both' })
       })
       const data = await res.json()
       if (data.ok) {
@@ -376,7 +382,7 @@ export default function InstagramComments() {
                 <h2 className="text-lg font-bold text-gray-800">Comment Triggers</h2>
               </div>
               <button
-                onClick={() => setTriggerForm({ name: '', keywords: '', response_message: '', reply_type: 'private', match_type: 'contains' })}
+                onClick={() => setTriggerForm({ name: '', keywords: '', response_message: '', reply_type: 'private', match_type: 'contains', trigger_source: 'both' })}
                 className="flex items-center gap-1 px-3 py-1.5 bg-amber-500 text-white text-sm font-medium rounded-lg hover:bg-amber-600 transition"
               >
                 <Plus className="w-4 h-4" /> Nuevo
@@ -419,7 +425,8 @@ export default function InstagramComments() {
                             keywords: trigger.keywords,
                             response_message: trigger.response_message,
                             reply_type: trigger.reply_type,
-                            match_type: trigger.match_type
+                            match_type: trigger.match_type,
+                            trigger_source: trigger.trigger_source || 'both'
                           })}
                           className="p-1 text-gray-400 hover:text-blue-500 transition"
                         >
@@ -451,6 +458,9 @@ export default function InstagramComments() {
                         trigger.reply_type === 'private' ? 'bg-indigo-100 text-indigo-700' : 'bg-pink-100 text-pink-700'
                       }`}>
                         {trigger.reply_type === 'private' ? <><Mail className="w-3 h-3" /> DM</> : <><Globe className="w-3 h-3" /> Publica</>}
+                      </span>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                        {trigger.trigger_source === 'comments' ? 'Comentarios' : trigger.trigger_source === 'story_replies' ? 'Stories' : 'Ambos'}
                       </span>
                       <span className="text-xs text-gray-400">
                         {trigger.trigger_count || 0} veces
@@ -562,6 +572,39 @@ export default function InstagramComments() {
                     </div>
                   </div>
 
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Aplica a</label>
+                    <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+                      <button
+                        onClick={() => setTriggerForm({ ...triggerForm, trigger_source: 'comments' })}
+                        className={`flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition ${
+                          triggerForm.trigger_source === 'comments' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'
+                        }`}
+                      >
+                        Comentarios
+                      </button>
+                      <button
+                        onClick={() => setTriggerForm({ ...triggerForm, trigger_source: 'story_replies', reply_type: 'private' })}
+                        className={`flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition ${
+                          triggerForm.trigger_source === 'story_replies' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500'
+                        }`}
+                      >
+                        Stories
+                      </button>
+                      <button
+                        onClick={() => setTriggerForm({ ...triggerForm, trigger_source: 'both' })}
+                        className={`flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition ${
+                          triggerForm.trigger_source === 'both' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500'
+                        }`}
+                      >
+                        Ambos
+                      </button>
+                    </div>
+                    {triggerForm.trigger_source === 'story_replies' && (
+                      <p className="text-xs text-orange-500 mt-1">Las respuestas a stories solo permiten DM privado</p>
+                    )}
+                  </div>
+
                   {triggerForm.reply_type === 'private' && (
                     <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3">
                       <p className="text-xs text-indigo-600">
@@ -594,7 +637,7 @@ export default function InstagramComments() {
                   Responde automaticamente por DM cuando alguien comenta una palabra clave en tus posts
                 </p>
                 <button
-                  onClick={() => setTriggerForm({ name: '', keywords: '', response_message: '', reply_type: 'private', match_type: 'contains' })}
+                  onClick={() => setTriggerForm({ name: '', keywords: '', response_message: '', reply_type: 'private', match_type: 'contains', trigger_source: 'both' })}
                   className="mt-4 flex items-center gap-2 px-4 py-2 bg-amber-500 text-white font-medium rounded-lg hover:bg-amber-600 transition"
                 >
                   <Plus className="w-4 h-4" /> Crear primer trigger
