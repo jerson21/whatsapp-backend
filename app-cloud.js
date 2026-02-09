@@ -7006,6 +7006,43 @@ chatNamespace.on('connection', (socket) => {
       }
     });
 
+    // Typing indicator: enviar a WhatsApp/Instagram cuando agente escribe
+    socket.on('typing_start', async (data) => {
+      if (!data?.sessionId) return;
+      try {
+        const [rows] = await pool.query(
+          'SELECT phone, channel FROM chat_sessions WHERE id = ? AND status = ?',
+          [data.sessionId, 'OPEN']
+        );
+        if (!rows.length) return;
+        const { phone, channel } = rows[0];
+
+        if (channel === 'whatsapp') {
+          // WhatsApp: necesita el wa_msg_id del ultimo mensaje entrante
+          const [msgRows] = await pool.query(
+            `SELECT wa_msg_id FROM chat_messages WHERE session_id = ? AND direction = 'in' ORDER BY id DESC LIMIT 1`,
+            [data.sessionId]
+          );
+          if (msgRows.length && msgRows[0].wa_msg_id) {
+            sendTypingIndicator(msgRows[0].wa_msg_id).catch(() => {});
+          }
+        } else if (channel === 'instagram' || channel === 'messenger') {
+          // Instagram/Messenger: sender_action typing_on
+          const igToken = channelAdapters?.config?.instagram?.accessToken || process.env.INSTAGRAM_ACCESS_TOKEN;
+          const igId = process.env.INSTAGRAM_BUSINESS_ID;
+          if (igToken && igId) {
+            fetch(`https://graph.instagram.com/v22.0/${igId}/messages`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${igToken}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ recipient: { id: phone }, sender_action: 'typing_on' })
+            }).catch(() => {});
+          }
+        }
+      } catch (e) {
+        logger.debug({ e: e.message }, 'Typing indicator error (non-critical)');
+      }
+    });
+
     socket.on('disconnect', () => {
       if (socket.agentId) {
         agentPresence.delete(socket.agentId);

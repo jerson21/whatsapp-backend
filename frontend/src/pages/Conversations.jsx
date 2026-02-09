@@ -332,8 +332,20 @@ export default function Conversations() {
     }
   }
 
+  // Typing indicator: debounce para no spamear
+  const typingTimeoutRef = useRef(null)
   const handleInputChange = (e) => {
     setNewMessage(e.target.value)
+    // Enviar typing_start al socket (debounced cada 3s)
+    if (socket && selectedSessionId && e.target.value.trim()) {
+      if (!typingTimeoutRef.current) {
+        socket.emit('typing_start', { sessionId: selectedSessionId })
+      }
+      clearTimeout(typingTimeoutRef.current)
+      typingTimeoutRef.current = setTimeout(() => {
+        typingTimeoutRef.current = null
+      }, 3000)
+    }
   }
 
   const handleSend = async () => {
