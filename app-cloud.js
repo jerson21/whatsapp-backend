@@ -2667,9 +2667,31 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                       confirmado = true;
                     }
 
-                    // Si ya respondió antes, no auto-responder de nuevo (dejar al agente humano)
+                    // Si ya respondió antes, no auto-responder pero SÍ detectar confirmación tardía
                     if (alreadyResponded) {
-                      logger.info({ sessionId, alreadyResponded: true, msgLower }, '📦 Cliente ya respondió antes, dejando al agente humano');
+                      deliveryConfirmationHandled = true; // Siempre bloquear bot en categoría entrega
+                      if (confirmado !== null && existingNotes.cliente_confirmo === 'otro') {
+                        // El cliente finalmente confirmó/rechazó después de conversar con agente
+                        logger.info({ sessionId, numOrden, confirmado, msgLower }, '📦 Confirmación tardía detectada (post-conversación)');
+                        const MAIN_API = process.env.MAIN_API_BASE || 'https://www.respaldoschile.cl/onlinev2/api';
+                        const WEBHOOK_SECRET = 'rch-wh-2026-s3cr3t-k3y';
+                        try {
+                          await fetch(`${MAIN_API}/confirmar_entrega_whatsapp.php`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ num_orden: numOrden, telefono: from, confirmado, secret_key: WEBHOOK_SECRET }),
+                            signal: AbortSignal.timeout(10000)
+                          });
+                          existingNotes.cliente_confirmo = confirmado;
+                          existingNotes.confirmo_at = new Date().toISOString();
+                          await pool.query('UPDATE chat_categories SET notes = ? WHERE session_id = ?', [JSON.stringify(existingNotes), sessionId]);
+                          logger.info({ sessionId, numOrden, confirmado }, '✅ Confirmación tardía procesada');
+                        } catch (phpErr) {
+                          logger.warn({ error: phpErr.message, sessionId }, '⚠️ Error en confirmación tardía');
+                        }
+                      } else {
+                        logger.info({ sessionId, alreadyResponded: true, msgLower }, '📦 Entrega: dejando al agente humano (bot bloqueado)');
+                      }
                     } else if (confirmado === null) {
                       // Primera vez que escribe algo que no es confirmación ni rechazo
                       deliveryConfirmationHandled = true;
@@ -5259,17 +5281,17 @@ app.post('/api/chat/correct-text', panelAuth, express.json(), async (req, res) =
       messages: [
         {
           role: 'system',
-          content: `Eres un asistente de redacción para agentes de atención al cliente de RespaldosChile, empresa chilena de fundas y accesorios.
-Tu tarea es mejorar el mensaje del agente: corregir ortografía/gramática Y mejorar la redacción para que suene profesional, amable y claro.
+          content: `Eres un CORRECTOR DE TEXTO. Un agente de atención al cliente está escribiendo un mensaje para enviárselo a un cliente.
+Tú NO eres parte de la conversación. NO le estás hablando al agente. Solo corriges su texto.
+El texto que recibes es lo que el agente quiere enviarle al cliente. Tu trabajo es SOLO corregir ortografía y gramática.
 Reglas:
-- Corrige errores de ortografía, gramática y puntuación
-- Mejora la redacción para que sea más clara y profesional
-- Mantén un tono cercano y amable (somos una empresa cercana al cliente)
-- NO cambies el significado ni la intención del mensaje
-- NO agregues información que el agente no haya escrito
-- Mantén el mensaje breve y directo (es un chat, no un email)
-- Si el texto ya está bien, devuélvelo tal cual
-- Responde SOLO con el texto mejorado, nada más`
+- SOLO corrige ortografía, gramática y puntuación
+- NUNCA cambies el contenido ni el significado del mensaje
+- NUNCA respondas al texto como si te hablaran a ti (si dice "gracias" es para el cliente, NO para ti)
+- NUNCA agregues frases, ideas o información nueva
+- Mantén la misma extensión del mensaje original
+- Si el texto ya está correcto, devuélvelo EXACTAMENTE igual
+- Responde SOLO con el texto corregido, nada más`
         },
         { role: 'user', content: text }
       ]
@@ -5279,6 +5301,80 @@ Reglas:
   } catch (e) {
     logger.warn({ error: e.message }, '⚠️ Error en corrector de texto');
     res.status(500).json({ ok: false, error: 'Error al corregir texto' });
+  }
+});
+
+/* ========= API: Confirmar entrega manualmente desde dashboard ========= */
+app.post('/api/chat/confirm-delivery', panelAuth, express.json(), async (req, res) => {
+  try {
+    const { sessionId, confirmado } = req.body;
+    if (!sessionId || confirmado === undefined) {
+      return res.status(400).json({ ok: false, error: 'sessionId y confirmado requeridos' });
+    }
+
+    // Obtener orden del contexto
+    const [[ctxRow]] = await pool.query(
+      `SELECT current_order_context FROM chat_sessions
+       WHERE id = ? AND current_order_context IS NOT NULL`,
+      [Number(sessionId)]
+    );
+    if (!ctxRow?.current_order_context) {
+      return res.status(400).json({ ok: false, error: 'No hay orden asociada a esta sesión' });
+    }
+
+    const numOrden = ctxRow.current_order_context;
+    const MAIN_API = process.env.MAIN_API_BASE || 'https://www.respaldoschile.cl/onlinev2/api';
+    const WEBHOOK_SECRET = 'rch-wh-2026-s3cr3t-k3y';
+
+    // Llamar API PHP
+    const phpResp = await fetch(`${MAIN_API}/confirmar_entrega_whatsapp.php`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ num_orden: numOrden, telefono: '', confirmado: !!confirmado, secret_key: WEBHOOK_SECRET }),
+      signal: AbortSignal.timeout(10000)
+    });
+    const phpResult = await phpResp.json().catch(() => ({}));
+
+    // Actualizar notes de categoría
+    const [[catRow]] = await pool.query('SELECT notes FROM chat_categories WHERE session_id = ?', [Number(sessionId)]);
+    let notes = {};
+    try { notes = JSON.parse(catRow?.notes || '{}'); } catch (_) {}
+    notes.cliente_confirmo = !!confirmado;
+    notes.confirmo_at = new Date().toISOString();
+    notes.confirmado_por = 'agente_manual';
+    await pool.query('UPDATE chat_categories SET notes = ? WHERE session_id = ?', [JSON.stringify(notes), Number(sessionId)]);
+
+    logger.info({ sessionId, numOrden, confirmado, phpResult }, '✅ Entrega confirmada manualmente por agente');
+    res.json({ ok: true, numOrden, confirmado: !!confirmado, phpResult });
+  } catch (err) {
+    logger.error({ error: err.message }, '❌ Error en confirm-delivery');
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/* ========= API: Estado de entrega para badge ========= */
+app.get('/api/chat/delivery-status/:sessionId', panelAuth, async (req, res) => {
+  try {
+    const sessionId = Number(req.params.sessionId);
+    const [[catRow]] = await pool.query('SELECT category, notes FROM chat_categories WHERE session_id = ?', [sessionId]);
+    if (!catRow || catRow.category !== 'entrega') {
+      return res.json({ ok: true, isDelivery: false });
+    }
+    let notes = {};
+    try { notes = JSON.parse(catRow.notes || '{}'); } catch (_) {}
+
+    const [[ctxRow]] = await pool.query(
+      'SELECT current_order_context FROM chat_sessions WHERE id = ?', [sessionId]
+    );
+
+    let status = 'por_confirmar';
+    if (notes.cliente_confirmo === true) status = 'confirmada';
+    else if (notes.cliente_confirmo === false) status = 'no_puede_recibir';
+    else if (notes.cliente_confirmo === 'otro') status = 'en_conversacion';
+
+    res.json({ ok: true, isDelivery: true, status, numOrden: ctxRow?.current_order_context || null, notes });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
