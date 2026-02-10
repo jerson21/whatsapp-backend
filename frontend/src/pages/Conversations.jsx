@@ -154,6 +154,7 @@ export default function Conversations() {
   const [sending, setSending] = useState(false)
   const [suggestions, setSuggestions] = useState([])
   const [loadingSuggestions, setLoadingSuggestions] = useState(false)
+  const [correctionPreview, setCorrectionPreview] = useState(null) // { original, corrected }
   const [search, setSearch] = useState('')
   const [channelFilter, setChannelFilter] = useState('all')
   const [showAssignModal, setShowAssignModal] = useState(false)
@@ -389,30 +390,79 @@ export default function Conversations() {
     const text = directText || newMessage
     if (!text.trim() || !selectedPhone || sending) return
 
+    // Si es texto directo (sugerencia IA), enviar sin corrección
+    if (directText) {
+      setSending(true)
+      try {
+        await sendMessage(selectedPhone, directText)
+        setNewMessage('')
+        setSuggestions([])
+      } catch (err) {
+        console.error('Error sending message:', err)
+        alert(t('sendError'))
+      } finally {
+        setSending(false)
+      }
+      return
+    }
+
+    // Texto escrito por el agente: pedir corrección IA y mostrar preview
     setSending(true)
     try {
-      let finalText = text
-      // Solo auto-corregir si NO es texto directo (sugerencia IA ya viene bien redactado)
-      if (!directText) {
-        try {
-          const token = useAuthStore.getState().token
-          const res = await fetch('/api/chat/correct-text', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ text })
-          })
-          const data = await res.json()
-          if (data.ok && data.corrected) {
-            finalText = data.corrected
-          }
-        } catch (corrErr) {
-          console.warn('Corrección IA falló, enviando original:', corrErr)
-        }
+      const token = useAuthStore.getState().token
+      const res = await fetch('/api/chat/correct-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ text })
+      })
+      const data = await res.json()
+      if (data.ok && data.corrected && data.corrected.trim() !== text.trim()) {
+        // Corrección diferente: mostrar preview para que el agente elija
+        setCorrectionPreview({ original: text, corrected: data.corrected })
+        setSending(false)
+        return
       }
+    } catch (corrErr) {
+      console.warn('Corrección IA falló, enviando original:', corrErr)
+    }
 
-      await sendMessage(selectedPhone, finalText)
+    // Si no hubo corrección o falló, enviar original directo
+    try {
+      await sendMessage(selectedPhone, text)
       setNewMessage('')
       setSuggestions([])
+    } catch (err) {
+      console.error('Error sending message:', err)
+      alert(t('sendError'))
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const sendCorrected = async () => {
+    if (!correctionPreview) return
+    setSending(true)
+    try {
+      await sendMessage(selectedPhone, correctionPreview.corrected)
+      setNewMessage('')
+      setSuggestions([])
+      setCorrectionPreview(null)
+    } catch (err) {
+      console.error('Error sending message:', err)
+      alert(t('sendError'))
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const sendOriginal = async () => {
+    if (!correctionPreview) return
+    setSending(true)
+    try {
+      await sendMessage(selectedPhone, correctionPreview.original)
+      setNewMessage('')
+      setSuggestions([])
+      setCorrectionPreview(null)
     } catch (err) {
       console.error('Error sending message:', err)
       alert(t('sendError'))
@@ -1055,6 +1105,39 @@ export default function Conversations() {
               </div>
             )}
 
+            {/* Preview de corrección IA */}
+            {correctionPreview && (
+              <div className="bg-blue-50 border-t border-blue-200 px-4 py-3">
+                <div className="text-xs text-blue-500 font-medium mb-1">Corrección sugerida:</div>
+                <div className="text-sm text-gray-800 bg-white rounded-lg px-3 py-2 border border-blue-200 mb-2">
+                  {correctionPreview.corrected}
+                </div>
+                <div className="text-xs text-gray-400 mb-2">Original: <span className="italic">{correctionPreview.original}</span></div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={sendCorrected}
+                    disabled={sending}
+                    className="bg-blue-500 hover:bg-blue-600 text-white text-xs px-4 py-1.5 rounded-lg transition disabled:opacity-50"
+                  >
+                    Enviar corregido
+                  </button>
+                  <button
+                    onClick={sendOriginal}
+                    disabled={sending}
+                    className="bg-gray-500 hover:bg-gray-600 text-white text-xs px-4 py-1.5 rounded-lg transition disabled:opacity-50"
+                  >
+                    Enviar original
+                  </button>
+                  <button
+                    onClick={() => setCorrectionPreview(null)}
+                    className="text-gray-400 hover:text-gray-600 text-xs px-3 py-1.5 transition"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Input */}
             <div className="bg-white border-t border-gray-200 p-4">
               <div className="flex gap-3">
@@ -1073,10 +1156,11 @@ export default function Conversations() {
                   onKeyPress={handleKeyPress}
                   placeholder={t('messagePlaceholder')}
                   className="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
+                  disabled={!!correctionPreview}
                 />
                 <button
-                  onClick={handleSend}
-                  disabled={!newMessage.trim() || sending}
+                  onClick={() => handleSend()}
+                  disabled={!newMessage.trim() || sending || !!correctionPreview}
                   className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   <Send className="w-5 h-5" />
