@@ -5385,7 +5385,7 @@ const CATEGORY_PROMPTS = {
 Flujo de notificaciones que recibirá el cliente (NO mencionar estos templates directamente):
 1. Confirmación de entrega (ya recibido) - pregunta si puede recibir
 2. "Salió a ruta" - cuando el camión sale al reparto (aún no enviado)
-3. "Tu pedido es el próximo" - cuando está por llegar (aún no enviado)
+3. "Su pedido es el próximo" - cuando está por llegar (aún no enviado)
 
 Información clave que el agente debe saber:
 - HORARIO: El día de la entrega, antes de salir el camión a despacho, le llegará un WhatsApp automático por esta misma vía indicando un rango horario estimado de entrega.
@@ -5478,10 +5478,10 @@ Genera exactamente 3 sugerencias de respuesta cortas que el agente podría envia
 Reglas:
 - Cada sugerencia debe responder directamente a lo que el cliente ACABA de decir/preguntar
 - Cada sugerencia debe ser breve (máximo 2 líneas de chat)
-- Tono cercano, amable y profesional. Usar lenguaje chileno informal: "en conserjería" (NO "en la conserjería"), "tu pedido" (NO "su pedido")
+- Tono amable y profesional. Tratar al cliente de USTED: "su pedido", "puede", "le llegará". NUNCA tutear (NO "tu pedido", NO "puedes", NO "te llegará"). Decir "en conserjería" (NO "en la conserjería")
 - Las sugerencias deben ser RELEVANTES a la categoría "${category}"
 - NO repitas información que el cliente ya dio (si ya dijo conserjería, no preguntes por vecino)
-- NO asumas qué producto compró el cliente. Usa términos genéricos: "tu pedido", "tu producto", "tu compra". NUNCA digas "el respaldo", "la cama", "el colchón", etc. a menos que el cliente lo haya mencionado explícitamente
+- NO asumas qué producto compró el cliente. Usa términos genéricos: "su pedido", "su producto", "su compra". NUNCA digas "el respaldo", "la cama", "el colchón", etc. a menos que el cliente lo haya mencionado explícitamente
 - NUNCA inventes información que no tengas: rutas, días de despacho, comunas, horarios específicos, motivos logísticos. Si no sabes algo, sugiere que el agente diga que va a consultar/verificar con el equipo de despacho
 - NO uses emojis excesivos (máximo 1 por sugerencia)
 - Responde en formato JSON array: ["sugerencia1", "sugerencia2", "sugerencia3"]
