@@ -2667,7 +2667,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                       logger.info({ sessionId, numOrden, confirmado, msgLower, isButton: !!interactiveId }, '📦 Confirmación de entrega detectada');
 
                       // POST al endpoint PHP para actualizar pedido_detalle.confirma
-                      const MAIN_API = process.env.MAIN_API_BASE || 'https://respaldoschile.cl/onlinev2/api';
+                      const MAIN_API = process.env.MAIN_API_BASE || 'https://www.respaldoschile.cl/onlinev2/api';
                       const WEBHOOK_SECRET = 'rch-wh-2026-s3cr3t-k3y';
                       try {
                         const confirmUrl = `${MAIN_API}/confirmar_entrega_whatsapp.php`;
