@@ -4269,23 +4269,25 @@ app.post('/api/chat/send-template', sendLimiter, express.json(), async (req, res
           }
         }
         
-        if (codigoSeguimiento) {
-          // Extraer num_orden del codigo (formato: 12345-20-2025-aB)
+        // Determinar num_orden: priorizar deliveryMeta, luego extraer del código de seguimiento
+        let numOrden = deliveryMeta?.num_orden || null;
+
+        if (!numOrden && codigoSeguimiento) {
           const parts = codigoSeguimiento.split('-');
-          const numOrden = parts[0];
-          
-          if (numOrden && /^\d+$/.test(numOrden)) {
-            // Guardar contexto del pedido (expira en 48 horas)
-            await pool.query(
-              `UPDATE chat_sessions 
-               SET current_order_context = ?,
-                   order_context_expires = DATE_ADD(NOW(), INTERVAL 48 HOUR)
-               WHERE id = ?`,
-              [numOrden, Number(sessionId)]
-            );
-            
-            log.info({ sessionId, numOrden, codigoSeguimiento }, '📦 Contexto de pedido guardado desde frontend');
+          if (parts[0] && /^\d+$/.test(parts[0])) {
+            numOrden = parts[0];
           }
+        }
+
+        if (numOrden) {
+          await pool.query(
+            `UPDATE chat_sessions
+             SET current_order_context = ?,
+                 order_context_expires = DATE_ADD(NOW(), INTERVAL 48 HOUR)
+             WHERE id = ?`,
+            [String(numOrden), Number(sessionId)]
+          );
+          log.info({ sessionId, numOrden, codigoSeguimiento, fromMeta: !!deliveryMeta?.num_orden }, '📦 Contexto de pedido guardado');
         }
       } catch (contextError) {
         log.warn({ error: contextError.message }, '⚠️ Error guardando contexto del pedido');
