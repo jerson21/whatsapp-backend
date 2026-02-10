@@ -2645,6 +2645,11 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                   );
 
                   if (catRow?.category === 'entrega' && ctxRow?.current_order_context) {
+                    // Verificar si el cliente ya respondió antes (para no repetir auto-respuestas)
+                    let existingNotes = {};
+                    try { existingNotes = JSON.parse(catRow.notes || '{}'); } catch (_) {}
+                    const alreadyResponded = existingNotes.cliente_confirmo !== undefined;
+
                     const numOrden = ctxRow.current_order_context;
                     const msgLower = (interactiveTitle || textForDB || '').toLowerCase().trim();
                     let confirmado = null;
@@ -2662,8 +2667,11 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                       confirmado = true;
                     }
 
-                    if (confirmado === null) {
-                      // El cliente escribió algo que no es confirmación ni rechazo, pero está en contexto de entrega
+                    // Si ya respondió antes, no auto-responder de nuevo (dejar al agente humano)
+                    if (alreadyResponded) {
+                      logger.info({ sessionId, alreadyResponded: true, msgLower }, '📦 Cliente ya respondió antes, dejando al agente humano');
+                    } else if (confirmado === null) {
+                      // Primera vez que escribe algo que no es confirmación ni rechazo
                       deliveryConfirmationHandled = true;
                       try {
                         const genericText = 'Un momento, te transferiremos con un ejecutivo para ayudarte con tu consulta. 🙏';
@@ -2674,13 +2682,16 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                           [sessionId, genericText, from, waMsgId]
                         );
                         ssePush(sessionId, { type: 'message', direction: 'out', text: genericText, msgId: waMsgId, dbId: ins.insertId, status: 'sent', isAI: false, at: Date.now() });
+                        // Marcar como respondido para no repetir
+                        existingNotes.cliente_confirmo = 'otro';
+                        existingNotes.confirmo_at = new Date().toISOString();
+                        existingNotes.respuesta_boton = textForDB;
+                        await pool.query('UPDATE chat_categories SET notes = ? WHERE session_id = ?', [JSON.stringify(existingNotes), sessionId]);
                         logger.info({ sessionId, msgLower }, '💬 Respuesta genérica de entrega enviada (no matcheó confirmación)');
                       } catch (replyErr) {
                         logger.warn({ error: replyErr.message, sessionId }, '⚠️ Error enviando respuesta genérica de entrega');
                       }
-                    }
-
-                    if (confirmado !== null) {
+                    } else if (confirmado !== null) {
                       deliveryConfirmationHandled = true;
                       logger.info({ sessionId, numOrden, confirmado, msgLower, isButton: !!interactiveId }, '📦 Confirmación de entrega detectada');
 
