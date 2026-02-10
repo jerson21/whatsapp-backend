@@ -2666,7 +2666,14 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                       // El cliente escribió algo que no es confirmación ni rechazo, pero está en contexto de entrega
                       deliveryConfirmationHandled = true;
                       try {
-                        await sendTextViaCloudAPI(from, 'Un momento, te transferiremos con un ejecutivo para ayudarte con tu consulta. 🙏', sessionId);
+                        const genericText = 'Un momento, te transferiremos con un ejecutivo para ayudarte con tu consulta. 🙏';
+                        const waMsgId = await sendTextViaCloudAPI(from, genericText, sessionId);
+                        const [ins] = await pool.query(
+                          `INSERT INTO chat_messages (session_id, direction, text, wa_jid, wa_msg_id, status, is_ai_generated)
+                           VALUES (?, 'out', ?, ?, ?, 'sent', 0)`,
+                          [sessionId, genericText, from, waMsgId]
+                        );
+                        ssePush(sessionId, { type: 'message', direction: 'out', text: genericText, msgId: waMsgId, dbId: ins.insertId, status: 'sent', isAI: false, at: Date.now() });
                         logger.info({ sessionId, msgLower }, '💬 Respuesta genérica de entrega enviada (no matcheó confirmación)');
                       } catch (replyErr) {
                         logger.warn({ error: replyErr.message, sessionId }, '⚠️ Error enviando respuesta genérica de entrega');
@@ -2708,13 +2715,16 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
                       // Auto-responder al cliente según su confirmación
                       try {
-                        let autoReplyText;
-                        if (confirmado) {
-                          autoReplyText = '¡Genial! 🙌 En el botón de más arriba puedes *Ver el detalle de tu pedido*.';
-                        } else {
-                          autoReplyText = 'Entendido, un ejecutivo se pondrá en contacto en breve para revisar tu caso y coordinar la entrega. 🙏';
-                        }
-                        await sendTextViaCloudAPI(from, autoReplyText, sessionId);
+                        const autoReplyText = confirmado
+                          ? '¡Genial! 🙌 En el botón de más arriba puedes *Ver el detalle de tu pedido*.'
+                          : 'Entendido, un ejecutivo se pondrá en contacto en breve para revisar tu caso y coordinar la entrega. 🙏';
+                        const waMsgId = await sendTextViaCloudAPI(from, autoReplyText, sessionId);
+                        const [ins] = await pool.query(
+                          `INSERT INTO chat_messages (session_id, direction, text, wa_jid, wa_msg_id, status, is_ai_generated)
+                           VALUES (?, 'out', ?, ?, ?, 'sent', 0)`,
+                          [sessionId, autoReplyText, from, waMsgId]
+                        );
+                        ssePush(sessionId, { type: 'message', direction: 'out', text: autoReplyText, msgId: waMsgId, dbId: ins.insertId, status: 'sent', isAI: false, at: Date.now() });
                         logger.info({ sessionId, confirmado }, '💬 Auto-respuesta de confirmación enviada');
                       } catch (replyErr) {
                         logger.warn({ error: replyErr.message, sessionId }, '⚠️ Error enviando auto-respuesta de confirmación');
