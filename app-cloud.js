@@ -5284,7 +5284,12 @@ Reglas:
 
 /* ========= API: Sugerencias de respuesta con IA ========= */
 const CATEGORY_PROMPTS = {
-  entrega: `Contexto: Este cliente tiene un PEDIDO EN DESPACHO. Está esperando su entrega a domicilio.
+  entrega: `Contexto: Este cliente tiene un PEDIDO PENDIENTE DE ENTREGA a domicilio. Se le envió un mensaje de confirmación para coordinar si puede recibir. El pedido AÚN NO está en camino, NO decir que está en camino ni en ruta.
+
+Flujo de notificaciones que recibirá el cliente (NO mencionar estos templates directamente):
+1. Confirmación de entrega (ya recibido) - pregunta si puede recibir
+2. "Salió a ruta" - cuando el camión sale al reparto (aún no enviado)
+3. "Tu pedido es el próximo" - cuando está por llegar (aún no enviado)
 
 Información clave que el agente debe saber:
 - HORARIO: El día de la entrega, antes de salir el camión a despacho, le llegará un WhatsApp automático por esta misma vía indicando un rango horario estimado de entrega.
@@ -5296,7 +5301,8 @@ Tipos de sugerencias según lo que el cliente diga:
 - Si no puede recibir → ofrecer alternativas: vecino, conserjería, dirección cercana
 - Si pregunta por el pago → indicar el botón de pago en el mensaje de confirmación
 - Si pregunta por la hora → explicar que recibirá WhatsApp automático con rango horario
-- Si confirmó → agradecer y despedir amablemente`,
+- Si confirmó → agradecer y despedir amablemente
+- NUNCA sugerir que el pedido ya está en camino o en ruta`,
 
   ventas: `Contexto: Este cliente está CONSULTANDO POR PRODUCTOS o quiere COMPRAR.
 Tipos de sugerencias:

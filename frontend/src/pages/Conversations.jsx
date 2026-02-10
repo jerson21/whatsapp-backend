@@ -385,27 +385,29 @@ export default function Conversations() {
     }
   }
 
-  const handleSend = async () => {
-    if (!newMessage.trim() || !selectedPhone || sending) return
+  const handleSend = async (directText) => {
+    const text = directText || newMessage
+    if (!text.trim() || !selectedPhone || sending) return
 
     setSending(true)
     try {
-      // Auto-corregir con IA antes de enviar
-      let finalText = newMessage
-      try {
-        const token = useAuthStore.getState().token
-        const res = await fetch('/api/chat/correct-text', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ text: newMessage })
-        })
-        const data = await res.json()
-        if (data.ok && data.corrected) {
-          finalText = data.corrected
+      let finalText = text
+      // Solo auto-corregir si NO es texto directo (sugerencia IA ya viene bien redactado)
+      if (!directText) {
+        try {
+          const token = useAuthStore.getState().token
+          const res = await fetch('/api/chat/correct-text', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ text })
+          })
+          const data = await res.json()
+          if (data.ok && data.corrected) {
+            finalText = data.corrected
+          }
+        } catch (corrErr) {
+          console.warn('Corrección IA falló, enviando original:', corrErr)
         }
-      } catch (corrErr) {
-        // Si falla la corrección, enviar el original
-        console.warn('Corrección IA falló, enviando original:', corrErr)
       }
 
       await sendMessage(selectedPhone, finalText)
@@ -1043,7 +1045,7 @@ export default function Conversations() {
                 ) : suggestions.map((s, i) => (
                   <button
                     key={i}
-                    onClick={() => { setNewMessage(s); setSuggestions([]) }}
+                    onClick={() => handleSend(s)}
                     className="text-xs bg-white border border-purple-200 text-purple-700 px-3 py-1.5 rounded-full hover:bg-purple-50 hover:border-purple-400 transition max-w-xs truncate"
                     title={s}
                   >
