@@ -5376,11 +5376,15 @@ app.post('/api/chat/suggest-replies', panelAuth, express.json(), async (req, res
 
 ${categoryContext}
 
-Basándote en la conversación y el contexto de la categoría, genera exactamente 3 sugerencias de respuesta cortas que el agente podría enviar.
+IMPORTANTE: Las sugerencias deben responder al ÚLTIMO MENSAJE DEL CLIENTE. Lee toda la conversación para contexto, pero enfócate en lo que el cliente preguntó o dijo en su mensaje más reciente.
+Si el cliente hizo varias consultas en sus últimos mensajes, responde a TODAS en una sola sugerencia cuando sea posible.
+Genera exactamente 3 sugerencias de respuesta cortas que el agente podría enviar.
 Reglas:
+- Cada sugerencia debe responder directamente a lo que el cliente ACABA de decir/preguntar
 - Cada sugerencia debe ser breve (máximo 2 líneas de chat)
 - Tono cercano, amable y profesional
 - Las sugerencias deben ser RELEVANTES a la categoría "${category}"
+- NO repitas información que el cliente ya dio (si ya dijo conserjería, no preguntes por vecino)
 - NO uses emojis excesivos (máximo 1 por sugerencia)
 - Responde en formato JSON array: ["sugerencia1", "sugerencia2", "sugerencia3"]
 - SOLO el JSON, nada más`
