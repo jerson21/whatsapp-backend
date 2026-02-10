@@ -32,7 +32,8 @@ import {
   Filter,
   Trash2,
   Tag,
-  Truck
+  Truck,
+  Sparkles
 } from 'lucide-react'
 import { useSocket } from '../hooks/useSocket'
 import AssignModal from '../components/AssignModal'
@@ -151,6 +152,8 @@ export default function Conversations() {
   const [newMessage, setNewMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  const [suggestions, setSuggestions] = useState([])
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
   const [search, setSearch] = useState('')
   const [channelFilter, setChannelFilter] = useState('all')
   const [showAssignModal, setShowAssignModal] = useState(false)
@@ -407,11 +410,34 @@ export default function Conversations() {
 
       await sendMessage(selectedPhone, finalText)
       setNewMessage('')
+      setSuggestions([])
     } catch (err) {
       console.error('Error sending message:', err)
       alert(t('sendError'))
     } finally {
       setSending(false)
+    }
+  }
+
+  const fetchSuggestions = async (sessId) => {
+    if (!sessId) return
+    setLoadingSuggestions(true)
+    setSuggestions([])
+    try {
+      const token = useAuthStore.getState().token
+      const res = await fetch('/api/chat/suggest-replies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ sessionId: sessId })
+      })
+      const data = await res.json()
+      if (data.ok && data.suggestions?.length) {
+        setSuggestions(data.suggestions)
+      }
+    } catch (err) {
+      console.warn('Error fetching suggestions:', err)
+    } finally {
+      setLoadingSuggestions(false)
     }
   }
 
@@ -1008,9 +1034,36 @@ export default function Conversations() {
               <div ref={messagesEndRef} />
             </div>
 
+            {/* Sugerencias de respuesta */}
+            {(suggestions.length > 0 || loadingSuggestions) && (
+              <div className="bg-gray-50 border-t border-gray-200 px-4 py-2 flex gap-2 flex-wrap items-center">
+                <span className="text-xs text-gray-400 mr-1">Sugerencias:</span>
+                {loadingSuggestions ? (
+                  <span className="text-xs text-gray-400 animate-pulse">Generando...</span>
+                ) : suggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    onClick={() => { setNewMessage(s); setSuggestions([]) }}
+                    className="text-xs bg-white border border-purple-200 text-purple-700 px-3 py-1.5 rounded-full hover:bg-purple-50 hover:border-purple-400 transition max-w-xs truncate"
+                    title={s}
+                  >
+                    {s.length > 60 ? s.slice(0, 60) + '...' : s}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* Input */}
             <div className="bg-white border-t border-gray-200 p-4">
               <div className="flex gap-3">
+                <button
+                  onClick={() => fetchSuggestions(selectedSessionId)}
+                  disabled={loadingSuggestions || !selectedSessionId}
+                  className="bg-purple-500 hover:bg-purple-600 text-white px-3 py-3 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Sugerir respuestas con IA"
+                >
+                  <Sparkles className={`w-5 h-5 ${loadingSuggestions ? 'animate-spin' : ''}`} />
+                </button>
                 <input
                   type="text"
                   value={newMessage}

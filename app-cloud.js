@@ -5282,6 +5282,67 @@ Reglas:
   }
 });
 
+/* ========= API: Sugerencias de respuesta con IA ========= */
+app.post('/api/chat/suggest-replies', panelAuth, express.json(), async (req, res) => {
+  try {
+    const { sessionId } = req.body || {};
+    if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId requerido' });
+    if (!openaiClient) return res.status(503).json({ ok: false, error: 'OpenAI no configurado' });
+
+    // Obtener últimos 15 mensajes de la conversación
+    const [msgs] = await pool.query(
+      `SELECT direction, text FROM chat_messages
+       WHERE session_id = ? AND text IS NOT NULL AND text != ''
+       ORDER BY id DESC LIMIT 15`,
+      [Number(sessionId)]
+    );
+    if (!msgs.length) return res.json({ ok: true, suggestions: [] });
+
+    // Construir historial (invertir para orden cronológico)
+    const history = msgs.reverse().map(m =>
+      `${m.direction === 'in' ? 'Cliente' : 'Agente'}: ${m.text}`
+    ).join('\n');
+
+    const completion = await openaiClient.chat.completions.create({
+      model: 'gpt-4o-mini',
+      max_tokens: 300,
+      temperature: 0.7,
+      messages: [
+        {
+          role: 'system',
+          content: `Eres un asistente para agentes de atención al cliente de RespaldosChile (empresa chilena de fundas, respaldos y accesorios para el hogar).
+Basándote en la conversación, genera exactamente 3 sugerencias de respuesta cortas que el agente podría enviar.
+Reglas:
+- Cada sugerencia debe ser breve (máximo 2 líneas de chat)
+- Tono cercano, amable y profesional
+- Respuestas útiles y relevantes al contexto
+- Si el cliente pregunta algo, responde con información útil
+- Si el cliente saluda, responde con un saludo y ofrecimiento de ayuda
+- NO uses emojis excesivos (máximo 1 por sugerencia)
+- Responde en formato JSON array: ["sugerencia1", "sugerencia2", "sugerencia3"]
+- SOLO el JSON, nada más`
+        },
+        { role: 'user', content: `Conversación:\n${history}\n\nGenera 3 sugerencias de respuesta para el agente:` }
+      ]
+    });
+
+    let suggestions = [];
+    try {
+      const raw = completion.choices?.[0]?.message?.content?.trim() || '[]';
+      suggestions = JSON.parse(raw);
+      if (!Array.isArray(suggestions)) suggestions = [];
+      suggestions = suggestions.slice(0, 3).filter(s => typeof s === 'string' && s.trim());
+    } catch (_) {
+      suggestions = [];
+    }
+
+    res.json({ ok: true, suggestions });
+  } catch (e) {
+    logger.warn({ error: e.message }, '⚠️ Error en sugerencias de respuesta');
+    res.status(500).json({ ok: false, error: 'Error generando sugerencias' });
+  }
+});
+
 /* ========= API: Learning System (Q&A pairs, precios) ========= */
 const learningRoutes = require('./api/learning-routes');
 app.use('/api/learning', panelAuth, supervisorOnly, learningRoutes(pool, conversationLearner, openaiClient));
