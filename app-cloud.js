@@ -5285,11 +5285,18 @@ Reglas:
 /* ========= API: Sugerencias de respuesta con IA ========= */
 const CATEGORY_PROMPTS = {
   entrega: `Contexto: Este cliente tiene un PEDIDO EN DESPACHO. Está esperando su entrega a domicilio.
-Tipos de sugerencias:
-- Confirmar horarios de entrega, informar que el despacho va en camino
-- Ofrecer reprogramar si el cliente no puede recibir
-- Dar información sobre seguimiento del pedido
-- Si confirmó entrega, agradecer y despedir`,
+
+Información clave que el agente debe saber:
+- HORARIO: El día de la entrega, antes de salir el camión a despacho, le llegará un WhatsApp automático por esta misma vía indicando un rango horario estimado de entrega.
+- PAGO: Si pregunta dónde o cómo pagar, indicarle que en el mensaje de confirmación de entrega (más arriba en el chat) está el botón para realizar el pago.
+- NO PUEDE RECIBIR: Si dice que no puede recibir, preguntarle si hay algún vecino o dirección cercana que pueda recibir por él, o si puede quedar en conserjería.
+- CONFIRMACIÓN: Si ya confirmó que puede recibir, agradecer y recordar que recibirá el WhatsApp con el horario antes del despacho.
+
+Tipos de sugerencias según lo que el cliente diga:
+- Si no puede recibir → ofrecer alternativas: vecino, conserjería, dirección cercana
+- Si pregunta por el pago → indicar el botón de pago en el mensaje de confirmación
+- Si pregunta por la hora → explicar que recibirá WhatsApp automático con rango horario
+- Si confirmó → agradecer y despedir amablemente`,
 
   ventas: `Contexto: Este cliente está CONSULTANDO POR PRODUCTOS o quiere COMPRAR.
 Tipos de sugerencias:
