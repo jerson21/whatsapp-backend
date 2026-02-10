@@ -30,7 +30,9 @@ import {
   Building2,
   Inbox,
   Filter,
-  Trash2
+  Trash2,
+  Tag,
+  Truck
 } from 'lucide-react'
 import { useSocket } from '../hooks/useSocket'
 import AssignModal from '../components/AssignModal'
@@ -87,6 +89,32 @@ function ChannelBadge({ channel }) {
     )
   }
   return null
+}
+
+const CATEGORY_CONFIG = {
+  entrega:    { label: 'Entrega',    color: '#17a2b8', Icon: Truck },
+  urgente:    { label: 'Urgente',    color: '#dc3545', Icon: Tag },
+  ventas:     { label: 'Ventas',     color: '#28a745', Icon: Tag },
+  postventa:  { label: 'Postventa',  color: '#ffc107', Icon: Tag },
+  finalizado: { label: 'Finalizado', color: '#6c757d', Icon: Tag },
+  general:    { label: 'General',    color: '#6f42c1', Icon: Tag },
+}
+
+function CategoryBadge({ category }) {
+  if (!category) return null
+  const cfg = CATEGORY_CONFIG[category]
+  if (!cfg) return null
+  const { label, color, Icon } = cfg
+  return (
+    <span
+      className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+      style={{ backgroundColor: color + '20', color }}
+      title={label}
+    >
+      <Icon className="w-2.5 h-2.5" />
+      {label}
+    </span>
+  )
 }
 
 const AVATAR_COLORS = [
@@ -734,6 +762,7 @@ export default function Conversations() {
                   {/* Channel & Assignment badges */}
                   <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                     <ChannelBadge channel={conv.channel} />
+                    <CategoryBadge category={conv.category} />
                     {conv.department_name && (
                       <span
                         className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-medium"

@@ -2624,13 +2624,76 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             }
 
             // Acciones por respuesta interactiva (plantillas con botones)
-            // DESACTIVADO: Ahora usa ConversationEngine unificado
             let interactiveId = null;
             try {
               interactiveId = m?.interactive?.button_reply?.id || m?.interactive?.list_reply?.id || null;
-              if (interactiveId) {
-                logger.info({ interactiveId, sessionId }, '🔴 Sistema botones DESACTIVADO - usará ConversationEngine');
-                // await handleTemplateButtonAction(interactiveId, { sessionId, phone: from, text: textForDB, interactive: m.interactive });
+              const interactiveTitle = m?.interactive?.button_reply?.title || m?.interactive?.list_reply?.title || null;
+
+              // 🏷️ CONFIRMACIÓN DE ENTREGA: Si es botón interactivo y sesión tiene categoría "entrega"
+              if (interactiveId && sessionId) {
+                try {
+                  const [[catRow]] = await pool.query(
+                    'SELECT category, notes FROM chat_categories WHERE session_id = ?', [sessionId]
+                  );
+                  const [[ctxRow]] = await pool.query(
+                    `SELECT current_order_context FROM chat_sessions
+                     WHERE id = ? AND current_order_context IS NOT NULL
+                       AND (order_context_expires IS NULL OR order_context_expires > NOW())`,
+                    [sessionId]
+                  );
+
+                  if (catRow?.category === 'entrega' && ctxRow?.current_order_context) {
+                    const numOrden = ctxRow.current_order_context;
+                    const titleLower = (interactiveTitle || textForDB || '').toLowerCase().trim();
+                    let confirmado = null;
+
+                    if (titleLower.includes('puedo recibir') && !titleLower.includes('no puedo')) {
+                      confirmado = true;
+                    } else if (titleLower.includes('no puedo')) {
+                      confirmado = false;
+                    }
+
+                    if (confirmado !== null) {
+                      logger.info({ sessionId, numOrden, confirmado, titleLower }, '📦 Confirmación de entrega detectada');
+
+                      // POST al endpoint PHP para actualizar pedido_detalle.confirma
+                      const MAIN_API = process.env.MAIN_API_BASE || 'https://respaldoschile.cl/onlinev2/api';
+                      const WEBHOOK_SECRET = 'rch-wh-2026-s3cr3t-k3y';
+                      try {
+                        const confirmResp = await fetch(`${MAIN_API}/confirmar_entrega_whatsapp.php`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            num_orden: numOrden,
+                            telefono: from,
+                            confirmado,
+                            secret_key: WEBHOOK_SECRET
+                          }),
+                          signal: AbortSignal.timeout(10000)
+                        });
+                        const confirmResult = await confirmResp.json().catch(() => ({}));
+                        logger.info({ numOrden, confirmado, result: confirmResult }, '✅ Confirmación enviada a PHP');
+                      } catch (phpErr) {
+                        logger.warn({ error: phpErr.message, numOrden }, '⚠️ Error enviando confirmación a PHP');
+                      }
+
+                      // Actualizar notes de la categoría con la respuesta del cliente
+                      try {
+                        let existingNotes = {};
+                        try { existingNotes = JSON.parse(catRow.notes || '{}'); } catch (_) {}
+                        existingNotes.cliente_confirmo = confirmado;
+                        existingNotes.confirmo_at = new Date().toISOString();
+                        existingNotes.respuesta_boton = interactiveTitle || textForDB;
+                        await pool.query(
+                          'UPDATE chat_categories SET notes = ? WHERE session_id = ?',
+                          [JSON.stringify(existingNotes), sessionId]
+                        );
+                      } catch (_) {}
+                    }
+                  }
+                } catch (confirmErr) {
+                  logger.warn({ error: confirmErr.message }, '⚠️ Error en detección de confirmación de entrega');
+                }
               }
             } catch (e) { logger.error({ e }, 'interactive action error'); }
 
