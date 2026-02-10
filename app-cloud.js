@@ -2662,6 +2662,17 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                       confirmado = true;
                     }
 
+                    if (confirmado === null) {
+                      // El cliente escribió algo que no es confirmación ni rechazo, pero está en contexto de entrega
+                      deliveryConfirmationHandled = true;
+                      try {
+                        await sendTextViaCloudAPI(from, 'Un momento, te transferiremos con un ejecutivo para ayudarte con tu consulta. 🙏', sessionId);
+                        logger.info({ sessionId, msgLower }, '💬 Respuesta genérica de entrega enviada (no matcheó confirmación)');
+                      } catch (replyErr) {
+                        logger.warn({ error: replyErr.message, sessionId }, '⚠️ Error enviando respuesta genérica de entrega');
+                      }
+                    }
+
                     if (confirmado !== null) {
                       deliveryConfirmationHandled = true;
                       logger.info({ sessionId, numOrden, confirmado, msgLower, isButton: !!interactiveId }, '📦 Confirmación de entrega detectada');
@@ -2693,6 +2704,20 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                           numOrden,
                           confirmUrl: `${MAIN_API}/confirmar_entrega_whatsapp.php`
                         }, '⚠️ Error enviando confirmación a PHP');
+                      }
+
+                      // Auto-responder al cliente según su confirmación
+                      try {
+                        let autoReplyText;
+                        if (confirmado) {
+                          autoReplyText = '¡Genial! 🙌 En el botón de más arriba puedes *Ver el detalle de tu pedido*.';
+                        } else {
+                          autoReplyText = 'Entendido, un ejecutivo se pondrá en contacto en breve para revisar tu caso y coordinar la entrega. 🙏';
+                        }
+                        await sendTextViaCloudAPI(from, autoReplyText, sessionId);
+                        logger.info({ sessionId, confirmado }, '💬 Auto-respuesta de confirmación enviada');
+                      } catch (replyErr) {
+                        logger.warn({ error: replyErr.message, sessionId }, '⚠️ Error enviando auto-respuesta de confirmación');
                       }
 
                       // Actualizar notes de la categoría con la respuesta del cliente
