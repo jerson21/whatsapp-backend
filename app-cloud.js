@@ -2625,12 +2625,14 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
             // Acciones por respuesta interactiva (plantillas con botones)
             let interactiveId = null;
+            let deliveryConfirmationHandled = false;
             try {
               interactiveId = m?.interactive?.button_reply?.id || m?.interactive?.list_reply?.id || null;
               const interactiveTitle = m?.interactive?.button_reply?.title || m?.interactive?.list_reply?.title || null;
 
-              // 🏷️ CONFIRMACIÓN DE ENTREGA: Si es botón interactivo y sesión tiene categoría "entrega"
-              if (interactiveId && sessionId) {
+              // 🏷️ CONFIRMACIÓN DE ENTREGA: Detecta botones O texto de confirmación
+              // Funciona tanto si el cliente clickea el botón como si escribe "si puedo recibir"
+              if (sessionId && (interactiveId || textForDB)) {
                 try {
                   const [[catRow]] = await pool.query(
                     'SELECT category, notes FROM chat_categories WHERE session_id = ?', [sessionId]
@@ -2644,23 +2646,33 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
                   if (catRow?.category === 'entrega' && ctxRow?.current_order_context) {
                     const numOrden = ctxRow.current_order_context;
-                    const titleLower = (interactiveTitle || textForDB || '').toLowerCase().trim();
+                    const msgLower = (interactiveTitle || textForDB || '').toLowerCase().trim();
                     let confirmado = null;
 
-                    if (titleLower.includes('puedo recibir') && !titleLower.includes('no puedo')) {
-                      confirmado = true;
-                    } else if (titleLower.includes('no puedo')) {
+                    // Patrones de confirmación (botón o texto libre)
+                    const positivePatterns = ['puedo recibir', 'si puedo', 'sí puedo', 'si, puedo', 'sí, puedo',
+                      'confirmo', 'confirmado', 'perfecto', 'los espero', 'pueden venir', 'estoy en casa'];
+                    const negativePatterns = ['no puedo recibir', 'no puedo', 'no estoy', 'no estaré', 'no voy a estar',
+                      'reprogramar', 'cambiar fecha', 'no me sirve'];
+
+                    // Primero chequear negativos (para que "no puedo recibir" no matchee con "puedo recibir")
+                    if (negativePatterns.some(p => msgLower.includes(p))) {
                       confirmado = false;
+                    } else if (positivePatterns.some(p => msgLower.includes(p)) || (msgLower === 'si' || msgLower === 'sí' || msgLower === 'ok')) {
+                      confirmado = true;
                     }
 
                     if (confirmado !== null) {
-                      logger.info({ sessionId, numOrden, confirmado, titleLower }, '📦 Confirmación de entrega detectada');
+                      deliveryConfirmationHandled = true;
+                      logger.info({ sessionId, numOrden, confirmado, msgLower, isButton: !!interactiveId }, '📦 Confirmación de entrega detectada');
 
                       // POST al endpoint PHP para actualizar pedido_detalle.confirma
                       const MAIN_API = process.env.MAIN_API_BASE || 'https://respaldoschile.cl/onlinev2/api';
                       const WEBHOOK_SECRET = 'rch-wh-2026-s3cr3t-k3y';
                       try {
-                        const confirmResp = await fetch(`${MAIN_API}/confirmar_entrega_whatsapp.php`, {
+                        const confirmUrl = `${MAIN_API}/confirmar_entrega_whatsapp.php`;
+                        logger.info({ confirmUrl, numOrden, confirmado }, '📡 Enviando confirmación a PHP...');
+                        const confirmResp = await fetch(confirmUrl, {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
@@ -2672,7 +2684,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                           signal: AbortSignal.timeout(10000)
                         });
                         const confirmResult = await confirmResp.json().catch(() => ({}));
-                        logger.info({ numOrden, confirmado, result: confirmResult }, '✅ Confirmación enviada a PHP');
+                        logger.info({ numOrden, confirmado, httpStatus: confirmResp.status, result: confirmResult }, '✅ Confirmación enviada a PHP');
                       } catch (phpErr) {
                         logger.warn({ error: phpErr.message, numOrden }, '⚠️ Error enviando confirmación a PHP');
                       }
@@ -2729,6 +2741,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               : (chatbotGlobalEnabled || sessionChatbotEnabled);
             const shouldRunBot = Boolean(
               (textForDB || interactiveId) && botEnabledForThis && (!handledByOrchestrator || ORCH_BOOT_MODE === 'tee')
+              && !deliveryConfirmationHandled
             );
             
             // 🐛 DEBUG LOGS TEMPORALES
