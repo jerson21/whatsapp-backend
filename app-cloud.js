@@ -2686,7 +2686,13 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                         const confirmResult = await confirmResp.json().catch(() => ({}));
                         logger.info({ numOrden, confirmado, httpStatus: confirmResp.status, result: confirmResult }, '✅ Confirmación enviada a PHP');
                       } catch (phpErr) {
-                        logger.warn({ error: phpErr.message, numOrden }, '⚠️ Error enviando confirmación a PHP');
+                        logger.warn({
+                          error: phpErr.message,
+                          cause: phpErr.cause?.message || phpErr.cause?.code || String(phpErr.cause || ''),
+                          code: phpErr.code,
+                          numOrden,
+                          confirmUrl: `${MAIN_API}/confirmar_entrega_whatsapp.php`
+                        }, '⚠️ Error enviando confirmación a PHP');
                       }
 
                       // Actualizar notes de la categoría con la respuesta del cliente
