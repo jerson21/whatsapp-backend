@@ -5283,11 +5283,59 @@ Reglas:
 });
 
 /* ========= API: Sugerencias de respuesta con IA ========= */
+const CATEGORY_PROMPTS = {
+  entrega: `Contexto: Este cliente tiene un PEDIDO EN DESPACHO. Está esperando su entrega a domicilio.
+Tipos de sugerencias:
+- Confirmar horarios de entrega, informar que el despacho va en camino
+- Ofrecer reprogramar si el cliente no puede recibir
+- Dar información sobre seguimiento del pedido
+- Si confirmó entrega, agradecer y despedir`,
+
+  ventas: `Contexto: Este cliente está CONSULTANDO POR PRODUCTOS o quiere COMPRAR.
+Tipos de sugerencias:
+- Informar sobre productos, modelos, telas y colores disponibles
+- Consultar qué medidas necesita, ofrecer ayuda para elegir
+- Informar sobre formas de pago y despacho
+- Invitar a ver el catálogo en la web`,
+
+  postventa: `Contexto: Este cliente tiene un RECLAMO, CAMBIO o consulta POST-VENTA.
+Tipos de sugerencias:
+- Pedir datos del pedido para revisar el caso
+- Ofrecer soluciones: cambio, reenvío, reembolso
+- Explicar plazos y procesos de garantía
+- Escalar a supervisor si es necesario`,
+
+  urgente: `Contexto: Este caso está marcado como URGENTE y requiere atención prioritaria.
+Tipos de sugerencias:
+- Responder con prioridad y empatía
+- Pedir los datos necesarios para resolver rápido
+- Ofrecer solución inmediata o escalar`,
+
+  finalizado: `Contexto: Esta conversación está marcada como FINALIZADA.
+Tipos de sugerencias:
+- Preguntar si necesita algo más antes de cerrar
+- Agradecer y despedirse amablemente
+- Invitar a contactar de nuevo si necesita ayuda`,
+
+  general: `Contexto: Conversación general sin categoría específica.
+Tipos de sugerencias:
+- Saludar y preguntar en qué puede ayudar
+- Ofrecer información sobre productos o servicios
+- Derivar al área correspondiente si es necesario`
+};
+
 app.post('/api/chat/suggest-replies', panelAuth, express.json(), async (req, res) => {
   try {
     const { sessionId } = req.body || {};
     if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId requerido' });
     if (!openaiClient) return res.status(503).json({ ok: false, error: 'OpenAI no configurado' });
+
+    // Obtener categoría de la conversación
+    const [[catRow]] = await pool.query(
+      'SELECT category FROM chat_categories WHERE session_id = ?', [Number(sessionId)]
+    );
+    const category = catRow?.category || 'general';
+    const categoryContext = CATEGORY_PROMPTS[category] || CATEGORY_PROMPTS.general;
 
     // Obtener últimos 15 mensajes de la conversación
     const [msgs] = await pool.query(
@@ -5296,7 +5344,7 @@ app.post('/api/chat/suggest-replies', panelAuth, express.json(), async (req, res
        ORDER BY id DESC LIMIT 15`,
       [Number(sessionId)]
     );
-    if (!msgs.length) return res.json({ ok: true, suggestions: [] });
+    if (!msgs.length) return res.json({ ok: true, suggestions: [], category });
 
     // Construir historial (invertir para orden cronológico)
     const history = msgs.reverse().map(m =>
@@ -5311,13 +5359,14 @@ app.post('/api/chat/suggest-replies', panelAuth, express.json(), async (req, res
         {
           role: 'system',
           content: `Eres un asistente para agentes de atención al cliente de RespaldosChile (empresa chilena de fundas, respaldos y accesorios para el hogar).
-Basándote en la conversación, genera exactamente 3 sugerencias de respuesta cortas que el agente podría enviar.
+
+${categoryContext}
+
+Basándote en la conversación y el contexto de la categoría, genera exactamente 3 sugerencias de respuesta cortas que el agente podría enviar.
 Reglas:
 - Cada sugerencia debe ser breve (máximo 2 líneas de chat)
 - Tono cercano, amable y profesional
-- Respuestas útiles y relevantes al contexto
-- Si el cliente pregunta algo, responde con información útil
-- Si el cliente saluda, responde con un saludo y ofrecimiento de ayuda
+- Las sugerencias deben ser RELEVANTES a la categoría "${category}"
 - NO uses emojis excesivos (máximo 1 por sugerencia)
 - Responde en formato JSON array: ["sugerencia1", "sugerencia2", "sugerencia3"]
 - SOLO el JSON, nada más`
@@ -5336,7 +5385,7 @@ Reglas:
       suggestions = [];
     }
 
-    res.json({ ok: true, suggestions });
+    res.json({ ok: true, suggestions, category });
   } catch (e) {
     logger.warn({ error: e.message }, '⚠️ Error en sugerencias de respuesta');
     res.status(500).json({ ok: false, error: 'Error generando sugerencias' });
