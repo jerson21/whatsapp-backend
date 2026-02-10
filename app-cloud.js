@@ -4028,7 +4028,8 @@ app.post('/api/chat/send-template', sendLimiter, express.json(), async (req, res
     sessionId, token,
     templateName, languageCode,
     components, bodyParams, headerText,
-    debug // opcional
+    debug, // opcional
+    deliveryMeta // metadata de entrega desde PHP (route_id, fecha_entrega, num_orden, cliente_nombre)
   } = req.body || {};
 
   const qDebug = req.query.debug === '1' || String(debug) === 'true';
@@ -4182,8 +4183,40 @@ app.post('/api/chat/send-template', sendLimiter, express.json(), async (req, res
       } catch (contextError) {
         log.warn({ error: contextError.message }, '⚠️ Error guardando contexto del pedido');
       }
+
+      // 🏷️ AUTO-CATEGORIZAR como 'entrega' al enviar notificación de entrega
+      try {
+        const notesObj = {
+          auto: true,
+          source: 'notificacion_entrega',
+          timestamp: new Date().toISOString(),
+          ...(deliveryMeta || {})
+        };
+        const notesJson = JSON.stringify(notesObj);
+
+        // Misma lógica que POST /api/chat/categorize: DELETE + INSERT para mantener 1 fila por sesión
+        await pool.query('DELETE FROM chat_categories WHERE session_id = ?', [Number(sessionId)]);
+        await pool.query(
+          `INSERT INTO chat_categories (session_id, category, assigned_by, notes)
+           VALUES (?, 'entrega', 'system-auto', ?)`,
+          [Number(sessionId), notesJson]
+        );
+
+        // Notificar frontends conectados vía SSE
+        inboxPush({
+          type: 'conversation_categorized',
+          sessionId: Number(sessionId),
+          category: 'entrega',
+          timestamp: Date.now()
+        });
+
+        log.info({ sessionId, category: 'entrega', deliveryMeta }, '🏷️ Auto-categorizado como entrega');
+      } catch (catError) {
+        // No-fatal: el template ya se envió exitosamente
+        log.warn({ error: catError.message, sessionId }, '⚠️ Error al auto-categorizar como entrega');
+      }
     }
-    
+
     res.json({ ok: true, msgId: waMsgId, messageId, tookMs: took });
 
   } catch (e) {
