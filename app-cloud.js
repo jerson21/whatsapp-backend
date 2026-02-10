@@ -5386,6 +5386,7 @@ Reglas:
 - Las sugerencias deben ser RELEVANTES a la categoría "${category}"
 - NO repitas información que el cliente ya dio (si ya dijo conserjería, no preguntes por vecino)
 - NO asumas qué producto compró el cliente. Usa términos genéricos: "tu pedido", "tu producto", "tu compra". NUNCA digas "el respaldo", "la cama", "el colchón", etc. a menos que el cliente lo haya mencionado explícitamente
+- NUNCA inventes información que no tengas: rutas, días de despacho, comunas, horarios específicos, motivos logísticos. Si no sabes algo, sugiere que el agente diga que va a consultar/verificar con el equipo de despacho
 - NO uses emojis excesivos (máximo 1 por sugerencia)
 - Responde en formato JSON array: ["sugerencia1", "sugerencia2", "sugerencia3"]
 - SOLO el JSON, nada más`
