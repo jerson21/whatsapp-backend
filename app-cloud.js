@@ -5382,7 +5382,7 @@ Genera exactamente 3 sugerencias de respuesta cortas que el agente podría envia
 Reglas:
 - Cada sugerencia debe responder directamente a lo que el cliente ACABA de decir/preguntar
 - Cada sugerencia debe ser breve (máximo 2 líneas de chat)
-- Tono cercano, amable y profesional
+- Tono cercano, amable y profesional. Usar lenguaje chileno informal: "en conserjería" (NO "en la conserjería"), "tu pedido" (NO "su pedido")
 - Las sugerencias deben ser RELEVANTES a la categoría "${category}"
 - NO repitas información que el cliente ya dio (si ya dijo conserjería, no preguntes por vecino)
 - NO asumas qué producto compró el cliente. Usa términos genéricos: "tu pedido", "tu producto", "tu compra". NUNCA digas "el respaldo", "la cama", "el colchón", etc. a menos que el cliente lo haya mencionado explícitamente
