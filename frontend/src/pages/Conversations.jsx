@@ -771,7 +771,7 @@ export default function Conversations() {
             filteredConversations.map((conv) => (
               <button
                 key={conv.phone}
-                onClick={() => setSelectedPhone(conv.phone)}
+                onClick={() => { setSelectedPhone(conv.phone); setSuggestions([]) }}
                 className={`w-full flex items-center gap-3 p-4 border-b border-gray-100 hover:bg-gray-50 transition text-left ${
                   selectedPhone === conv.phone ? 'bg-green-50' : ''
                 }`}
