@@ -33,7 +33,11 @@ import {
   Trash2,
   Tag,
   Truck,
-  Sparkles
+  Sparkles,
+  CheckCircle,
+  XCircle,
+  Clock,
+  PackageCheck
 } from 'lucide-react'
 import { useSocket } from '../hooks/useSocket'
 import AssignModal from '../components/AssignModal'
@@ -155,6 +159,7 @@ export default function Conversations() {
   const [suggestions, setSuggestions] = useState([])
   const [loadingSuggestions, setLoadingSuggestions] = useState(false)
   const [correctionPreview, setCorrectionPreview] = useState(null) // { original, corrected }
+  const [deliveryStatus, setDeliveryStatus] = useState(null) // { isDelivery, status, numOrden }
   const [search, setSearch] = useState('')
   const [channelFilter, setChannelFilter] = useState('all')
   const [showAssignModal, setShowAssignModal] = useState(false)
@@ -468,6 +473,42 @@ export default function Conversations() {
       alert(t('sendError'))
     } finally {
       setSending(false)
+    }
+  }
+
+  const fetchDeliveryStatus = async (sessId) => {
+    if (!sessId) return setDeliveryStatus(null)
+    try {
+      const token = useAuthStore.getState().token
+      const res = await fetch(`/api/chat/delivery-status/${sessId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      const data = await res.json()
+      if (data.ok && data.isDelivery) {
+        setDeliveryStatus(data)
+      } else {
+        setDeliveryStatus(null)
+      }
+    } catch (err) {
+      setDeliveryStatus(null)
+    }
+  }
+
+  const handleConfirmDelivery = async (confirmado) => {
+    if (!selectedSessionId) return
+    try {
+      const token = useAuthStore.getState().token
+      const res = await fetch('/api/chat/confirm-delivery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ sessionId: selectedSessionId, confirmado })
+      })
+      const data = await res.json()
+      if (data.ok) {
+        fetchDeliveryStatus(selectedSessionId)
+      }
+    } catch (err) {
+      console.error('Error confirming delivery:', err)
     }
   }
 
@@ -823,7 +864,7 @@ export default function Conversations() {
             filteredConversations.map((conv) => (
               <button
                 key={conv.phone}
-                onClick={() => { setSelectedPhone(conv.phone); setSuggestions([]) }}
+                onClick={() => { setSelectedPhone(conv.phone); setSuggestions([]); setDeliveryStatus(null); fetchDeliveryStatus(conv.session_id || conv.sessionId || conv.id) }}
                 className={`w-full flex items-center gap-3 p-4 border-b border-gray-100 hover:bg-gray-50 transition text-left ${
                   selectedPhone === conv.phone ? 'bg-green-50' : ''
                 }`}
@@ -957,6 +998,49 @@ export default function Conversations() {
                   </div>
                 </div>
               </div>
+
+              {/* Delivery status badge + actions */}
+              {deliveryStatus && (
+                <div className="flex items-center gap-2">
+                  {deliveryStatus.status === 'por_confirmar' && (
+                    <span className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full bg-yellow-100 text-yellow-700 font-medium">
+                      <Clock className="w-3 h-3" />
+                      POR CONFIRMAR
+                    </span>
+                  )}
+                  {deliveryStatus.status === 'en_conversacion' && (
+                    <span className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full bg-orange-100 text-orange-700 font-medium">
+                      <Clock className="w-3 h-3" />
+                      EN CONVERSACIÓN
+                    </span>
+                  )}
+                  {deliveryStatus.status === 'confirmada' && (
+                    <span className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full bg-green-100 text-green-700 font-medium">
+                      <CheckCircle className="w-3 h-3" />
+                      CONFIRMADA
+                    </span>
+                  )}
+                  {deliveryStatus.status === 'no_puede_recibir' && (
+                    <span className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full bg-red-100 text-red-700 font-medium">
+                      <XCircle className="w-3 h-3" />
+                      NO PUEDE RECIBIR
+                    </span>
+                  )}
+                  {deliveryStatus.numOrden && (
+                    <span className="text-[10px] text-gray-400">Orden #{deliveryStatus.numOrden}</span>
+                  )}
+                  {deliveryStatus.status !== 'confirmada' && (
+                    <button
+                      onClick={() => handleConfirmDelivery(true)}
+                      className="flex items-center gap-1 text-[11px] px-2.5 py-1 bg-green-500 hover:bg-green-600 text-white rounded-lg transition font-medium"
+                      title="Marcar entrega como confirmada"
+                    >
+                      <PackageCheck className="w-3.5 h-3.5" />
+                      Confirmar
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* Actions */}
               <div className="flex items-center gap-2">
@@ -1108,10 +1192,13 @@ export default function Conversations() {
             {/* Preview de corrección IA */}
             {correctionPreview && (
               <div className="bg-blue-50 border-t border-blue-200 px-4 py-3">
-                <div className="text-xs text-blue-500 font-medium mb-1">Corrección sugerida:</div>
-                <div className="text-sm text-gray-800 bg-white rounded-lg px-3 py-2 border border-blue-200 mb-2">
-                  {correctionPreview.corrected}
-                </div>
+                <div className="text-xs text-blue-500 font-medium mb-1">Corrección sugerida (puedes editar):</div>
+                <textarea
+                  value={correctionPreview.corrected}
+                  onChange={(e) => setCorrectionPreview({ ...correctionPreview, corrected: e.target.value })}
+                  className="w-full text-sm text-gray-800 bg-white rounded-lg px-3 py-2 border border-blue-200 mb-2 resize-none focus:ring-2 focus:ring-blue-400 outline-none"
+                  rows={2}
+                />
                 <div className="text-xs text-gray-400 mb-2">Original: <span className="italic">{correctionPreview.original}</span></div>
                 <div className="flex gap-2">
                   <button
@@ -1119,7 +1206,7 @@ export default function Conversations() {
                     disabled={sending}
                     className="bg-blue-500 hover:bg-blue-600 text-white text-xs px-4 py-1.5 rounded-lg transition disabled:opacity-50"
                   >
-                    Enviar corregido
+                    Enviar
                   </button>
                   <button
                     onClick={sendOriginal}
