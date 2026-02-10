@@ -5242,6 +5242,43 @@ app.use('/api/chat', panelAuth, assignmentRoutes(pool));
 const externalApiRoutes = require('./api/external-api-routes');
 app.use('/api/external', panelAuth, externalApiRoutes(pool, sendTextViaCloudAPI));
 
+/* ========= API: Corrector de texto con IA ========= */
+app.post('/api/chat/correct-text', panelAuth, express.json(), async (req, res) => {
+  try {
+    const { text } = req.body || {};
+    if (!text || !text.trim()) {
+      return res.status(400).json({ ok: false, error: 'Texto vacío' });
+    }
+    if (!openaiClient) {
+      return res.status(503).json({ ok: false, error: 'OpenAI no configurado' });
+    }
+    const completion = await openaiClient.chat.completions.create({
+      model: 'gpt-4o-mini',
+      max_tokens: 500,
+      temperature: 0.3,
+      messages: [
+        {
+          role: 'system',
+          content: `Eres un corrector de texto para agentes de atención al cliente de una empresa chilena.
+Tu ÚNICA tarea es corregir ortografía, gramática y puntuación del mensaje.
+Reglas:
+- Mantén el tono informal/cercano si el original lo tiene
+- NO cambies el significado ni agregues contenido nuevo
+- NO agregues saludos, emojis ni formalidades que no estén en el original
+- Si el texto ya está correcto, devuélvelo tal cual
+- Responde SOLO con el texto corregido, nada más`
+        },
+        { role: 'user', content: text }
+      ]
+    });
+    const corrected = completion.choices?.[0]?.message?.content?.trim() || text;
+    res.json({ ok: true, original: text, corrected });
+  } catch (e) {
+    logger.warn({ error: e.message }, '⚠️ Error en corrector de texto');
+    res.status(500).json({ ok: false, error: 'Error al corregir texto' });
+  }
+});
+
 /* ========= API: Learning System (Q&A pairs, precios) ========= */
 const learningRoutes = require('./api/learning-routes');
 app.use('/api/learning', panelAuth, supervisorOnly, learningRoutes(pool, conversationLearner, openaiClient));

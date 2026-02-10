@@ -32,7 +32,8 @@ import {
   Filter,
   Trash2,
   Tag,
-  Truck
+  Truck,
+  Sparkles
 } from 'lucide-react'
 import { useSocket } from '../hooks/useSocket'
 import AssignModal from '../components/AssignModal'
@@ -151,6 +152,7 @@ export default function Conversations() {
   const [newMessage, setNewMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  const [correcting, setCorrecting] = useState(false)
   const [search, setSearch] = useState('')
   const [channelFilter, setChannelFilter] = useState('all')
   const [showAssignModal, setShowAssignModal] = useState(false)
@@ -401,6 +403,27 @@ export default function Conversations() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
+    }
+  }
+
+  const handleCorrectText = async () => {
+    if (!newMessage.trim() || correcting) return
+    setCorrecting(true)
+    try {
+      const token = useAuthStore.getState().token
+      const res = await fetch('/api/chat/correct-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ text: newMessage })
+      })
+      const data = await res.json()
+      if (data.ok && data.corrected) {
+        setNewMessage(data.corrected)
+      }
+    } catch (err) {
+      console.error('Error correcting text:', err)
+    } finally {
+      setCorrecting(false)
     }
   }
 
@@ -1001,6 +1024,14 @@ export default function Conversations() {
                   placeholder={t('messagePlaceholder')}
                   className="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
                 />
+                <button
+                  onClick={handleCorrectText}
+                  disabled={!newMessage.trim() || correcting}
+                  className="bg-purple-500 hover:bg-purple-600 text-white px-3 py-3 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Corregir con IA"
+                >
+                  <Sparkles className={`w-5 h-5 ${correcting ? 'animate-spin' : ''}`} />
+                </button>
                 <button
                   onClick={handleSend}
                   disabled={!newMessage.trim() || sending}
