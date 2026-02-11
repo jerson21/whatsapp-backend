@@ -48,6 +48,23 @@ export async function markAsRead(phone) {
   return res.json()
 }
 
+export async function sendMedia(phone, file, type, caption) {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('to', phone)
+  formData.append('type', type)
+  if (caption) formData.append('caption', caption)
+
+  const token = useAuthStore.getState().token
+  const res = await fetch('/api/chat/send-media-panel', {
+    method: 'POST',
+    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    body: formData
+  })
+  if (!res.ok) throw new Error('Error sending media')
+  return res.json()
+}
+
 export async function fetchStats() {
   const res = await fetch('/api/chatbot/stats', {
     headers: getHeaders()

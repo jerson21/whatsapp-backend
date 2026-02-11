@@ -3879,6 +3879,105 @@ app.post('/api/chat/send-media', sendLimiter, upload.single('file'), async (req,
 
 
 
+/* ========= API: Enviar media desde panel del agente ========= */
+app.post('/api/chat/send-media-panel', panelAuth, upload.single('file'), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const phone = String(body.to || '');
+    const type = String(body.type || '').toLowerCase();
+    const caption = body.caption ? String(body.caption) : undefined;
+
+    if (!phone || !req.file) {
+      return res.status(400).json({ ok: false, error: 'Faltan campos: to, file' });
+    }
+
+    const VALID_TYPES = new Set(['image', 'video', 'audio', 'document']);
+    if (!VALID_TYPES.has(type)) {
+      return res.status(400).json({ ok: false, error: 'Tipo no soportado. Usar: image, video, audio, document' });
+    }
+
+    // Buscar sesión por phone (mismo patrón que /api/chat/send)
+    let [sessionRows] = await pool.query(
+      `SELECT id, phone, token, channel FROM chat_sessions WHERE phone=? AND status='OPEN' ORDER BY id DESC LIMIT 1`,
+      [phone]
+    );
+    if (!sessionRows.length) {
+      const normalizedPhone = normalizePhoneCL(phone);
+      [sessionRows] = await pool.query(
+        `SELECT id, phone, token, channel FROM chat_sessions WHERE phone=? AND status='OPEN' ORDER BY id DESC LIMIT 1`,
+        [normalizedPhone]
+      );
+    }
+    if (!sessionRows.length) {
+      return res.status(404).json({ ok: false, error: 'Conversación no encontrada' });
+    }
+
+    const session = sessionRows[0];
+    const sessionId = session.id;
+    const sessionChannel = session.channel || 'whatsapp';
+
+    // Subir archivo a Meta Cloud API
+    const filename = req.file.originalname || 'file';
+    const mime = req.file.mimetype || 'application/octet-stream';
+    const mediaId = await uploadMedia(req.file.buffer, filename, mime);
+
+    if (!mediaId) {
+      return res.status(500).json({ ok: false, error: 'Error al subir archivo a Meta' });
+    }
+
+    // Enviar media al cliente
+    const waMsgId = await sendMediaViaCloudAPI(session.phone, { type, mediaId, caption, filename });
+
+    // Guardar en chat_messages
+    const [result] = await pool.query(
+      `INSERT INTO chat_messages (session_id, direction, text, wa_jid, wa_msg_id, status, channel, media_type, media_id, media_mime, media_size, media_caption)
+       VALUES (?, 'out', ?, ?, ?, 'sent', ?, ?, ?, ?, ?, ?)`,
+      [sessionId, caption || null, session.phone, waMsgId, sessionChannel, type, mediaId, mime, req.file.size, caption || null]
+    );
+
+    // Cambiar a modo manual
+    await pool.query(`UPDATE chat_sessions SET chatbot_mode = 'manual' WHERE id = ?`, [sessionId]);
+
+    // SSE push
+    ssePush(sessionId, {
+      type: 'message',
+      direction: 'out',
+      text: caption || null,
+      msgId: waMsgId,
+      dbId: result.insertId,
+      status: 'sent',
+      mediaType: type,
+      mediaId,
+      mediaMime: mime,
+      mediaCaption: caption || null,
+      at: Date.now()
+    });
+
+    // Socket.IO
+    if (global.io) {
+      global.io.to(`session_${sessionId}`).emit('new_message', {
+        type: 'message',
+        direction: 'out',
+        text: caption || null,
+        msgId: waMsgId,
+        dbId: result.insertId,
+        status: 'sent',
+        mediaType: type,
+        mediaId,
+        mediaMime: mime,
+        mediaCaption: caption || null,
+        at: Date.now()
+      });
+    }
+
+    logger.info({ sessionId, type, filename, mediaId, waMsgId }, '📎 Media enviada desde panel');
+    res.json({ ok: true, msgId: waMsgId, messageId: result.insertId, mediaId });
+  } catch (err) {
+    logger.error({ error: err.message }, '❌ Error en send-media-panel');
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 app.post('/api/chat/send', sendLimiter, async (req, res) => {
   try {
     let { sessionId, token, text, to, message } = req.body || {};

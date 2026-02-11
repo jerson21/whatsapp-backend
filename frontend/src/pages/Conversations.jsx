@@ -4,6 +4,7 @@ import {
   fetchConversations,
   fetchConversation,
   sendMessage,
+  sendMedia,
   markAsRead
 } from '../api/conversations'
 import { useAuthStore } from '../store/authStore'
@@ -37,7 +38,8 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  PackageCheck
+  PackageCheck,
+  Paperclip
 } from 'lucide-react'
 import { useSocket } from '../hooks/useSocket'
 import AssignModal from '../components/AssignModal'
@@ -160,6 +162,9 @@ export default function Conversations() {
   const [loadingSuggestions, setLoadingSuggestions] = useState(false)
   const [correctionPreview, setCorrectionPreview] = useState(null) // { original, corrected }
   const [deliveryStatus, setDeliveryStatus] = useState(null) // { isDelivery, status, numOrden }
+  const [selectedFile, setSelectedFile] = useState(null) // { file, preview, type, name, size }
+  const [mediaCaption, setMediaCaption] = useState('')
+  const fileInputRef = useRef(null)
   const [search, setSearch] = useState('')
   const [channelFilter, setChannelFilter] = useState('all')
   const [showAssignModal, setShowAssignModal] = useState(false)
@@ -510,6 +515,62 @@ export default function Conversations() {
     } catch (err) {
       console.error('Error confirming delivery:', err)
     }
+  }
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = '' // reset para poder seleccionar el mismo archivo
+
+    // Detectar tipo
+    let type = 'document'
+    if (file.type.startsWith('image/')) type = 'image'
+    else if (file.type.startsWith('video/')) type = 'video'
+    else if (file.type.startsWith('audio/')) type = 'audio'
+
+    // Validar tamaño (16MB imagen/video/audio, 100MB documentos)
+    const maxSize = type === 'document' ? 100 * 1024 * 1024 : 16 * 1024 * 1024
+    if (file.size > maxSize) {
+      alert(`Archivo muy grande. Máximo ${type === 'document' ? '100' : '16'}MB`)
+      return
+    }
+
+    // Preview para imágenes
+    let preview = null
+    if (type === 'image') {
+      preview = URL.createObjectURL(file)
+    }
+
+    setSelectedFile({ file, preview, type, name: file.name, size: file.size })
+    setMediaCaption('')
+  }
+
+  const handleSendMedia = async () => {
+    if (!selectedFile || !selectedPhone || sending) return
+    setSending(true)
+    try {
+      await sendMedia(selectedPhone, selectedFile.file, selectedFile.type, mediaCaption || undefined)
+      if (selectedFile.preview) URL.revokeObjectURL(selectedFile.preview)
+      setSelectedFile(null)
+      setMediaCaption('')
+    } catch (err) {
+      console.error('Error sending media:', err)
+      alert('Error al enviar archivo')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const cancelFileSelection = () => {
+    if (selectedFile?.preview) URL.revokeObjectURL(selectedFile.preview)
+    setSelectedFile(null)
+    setMediaCaption('')
+  }
+
+  const formatFileSize = (bytes) => {
+    if (bytes < 1024) return bytes + ' B'
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
   }
 
   const fetchSuggestions = async (sessId) => {
@@ -1225,7 +1286,53 @@ export default function Conversations() {
               </div>
             )}
 
+            {/* Preview de archivo seleccionado */}
+            {selectedFile && (
+              <div className="bg-gray-50 border-t border-gray-200 px-4 py-3">
+                <div className="flex items-center gap-3">
+                  {selectedFile.type === 'image' && selectedFile.preview ? (
+                    <img src={selectedFile.preview} alt="" className="w-16 h-16 object-cover rounded-lg border border-gray-200" />
+                  ) : (
+                    <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center">
+                      <FileText className="w-6 h-6 text-gray-500" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-700 truncate">{selectedFile.name}</p>
+                    <p className="text-xs text-gray-400">{formatFileSize(selectedFile.size)} — {selectedFile.type}</p>
+                    {(selectedFile.type === 'image' || selectedFile.type === 'video') && (
+                      <input
+                        type="text"
+                        value={mediaCaption}
+                        onChange={(e) => setMediaCaption(e.target.value)}
+                        placeholder="Agregar descripción (opcional)"
+                        className="mt-1 w-full text-xs px-2 py-1 border border-gray-200 rounded focus:ring-1 focus:ring-green-400 outline-none"
+                      />
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleSendMedia}
+                      disabled={sending}
+                      className="bg-green-500 hover:bg-green-600 text-white text-xs px-4 py-2 rounded-lg transition disabled:opacity-50 flex items-center gap-1"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      {sending ? 'Enviando...' : 'Enviar'}
+                    </button>
+                    <button
+                      onClick={cancelFileSelection}
+                      className="text-gray-400 hover:text-gray-600 text-xs px-3 py-2 transition"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Input */}
+            <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileSelect}
+              accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt" />
             <div className="bg-white border-t border-gray-200 p-4">
               <div className="flex gap-3">
                 <button
@@ -1235,6 +1342,14 @@ export default function Conversations() {
                   title="Sugerir respuestas con IA"
                 >
                   <Sparkles className={`w-5 h-5 ${loadingSuggestions ? 'animate-spin' : ''}`} />
+                </button>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={sending || !!selectedFile}
+                  className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-3 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Adjuntar archivo"
+                >
+                  <Paperclip className="w-5 h-5" />
                 </button>
                 <input
                   type="text"
