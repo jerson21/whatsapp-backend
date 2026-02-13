@@ -3467,7 +3467,7 @@ app.get('/api/chat/history', async (req, res) => {
     }
 
     // Validar sesión
-    const [ses] = await db.execute(
+    const [ses] = await pool.query(
       'SELECT id, phone FROM chat_sessions WHERE id = ? AND token = ? LIMIT 1',
       [sessionId, token]
     );
@@ -3475,7 +3475,7 @@ app.get('/api/chat/history', async (req, res) => {
 
     // 🧠 Traer también campos de media
     let sql = `
-      SELECT 
+      SELECT
         id,
         direction,
         text,
@@ -3496,7 +3496,7 @@ app.get('/api/chat/history', async (req, res) => {
       LIMIT ?
     `;
     const params = beforeId ? [sessionId, beforeId, limit] : [sessionId, limit];
-    const [rows] = await db.execute(sql, params);
+    const [rows] = await pool.query(sql, params);
 
     rows.reverse();
 
