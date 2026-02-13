@@ -1705,22 +1705,11 @@ async function streamMetaMediaWithAuth(url, res, maxHops = 5) {
 /* ========= SSE ========= */
 const subscribers = new Map();
 
-// Inbox SSE (lista de conversaciones)
-const inboxSubscribers = new Set(); // Set(res)
-
 function ssePush(sessionId, payload) {
   const set = subscribers.get(Number(sessionId));
   if (!set) return;
   const data = `data: ${JSON.stringify(payload)}\n\n`;
   for (const res of set) res.write(data);
-}
-
-function inboxPush(payload) {
-  if (!inboxSubscribers.size) return;
-  const data = `data: ${JSON.stringify(payload)}\n\n`;
-  for (const res of inboxSubscribers) {
-    try { res.write(data); } catch {}
-  }
 }
 
 /* ========= Cloud API ========= */
@@ -2568,33 +2557,6 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
             logger.info(`📨 IN ${from}: ${String(textForDB).substring(0, 160)}`);
 
-            // Notificar inbox (último mensaje y contadores)
-            try {
-              const [[meta]] = await pool.query(
-                `SELECT 
-                   s.id, s.phone, s.name,
-                   (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id=s.id AND m.direction='in' AND m.status!='read') AS unreadCount
-                 FROM chat_sessions s WHERE s.id=? LIMIT 1`,
-                [sessionId]
-              );
-              inboxPush({
-                type: 'conversation_update',
-                sessionId,
-                phone: from,
-                lastText: textForDB,
-                lastAt: Date.now(),
-                unreadCount: Number(meta?.unreadCount || 0)
-              });
-              
-              // Emitir evento adicional para refrescar lista completa
-              inboxPush({
-                type: 'new_message',
-                sessionId,
-                phone: from,
-                timestamp: Date.now()
-              });
-            } catch (e) { logger.error({ e }, 'inboxPush conv update'); }
-
             // Async: fetch Instagram/Messenger profile y actualizar nombre de sesión (non-blocking)
             // También refetch si falta ig_username aunque tengamos nombre
             if ((channel === 'instagram' || channel === 'messenger') && (!contactName || !igUsername)) {
@@ -2957,7 +2919,6 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               global.io.of('/chat').to('dashboard_all').emit('new_message', echoPayload);
             }
 
-            inboxPush({ type: 'update', sessionId: echoSessionId });
           } catch (e) {
             logger.error({ e }, 'webhook echo message handler');
           }
@@ -4453,14 +4414,6 @@ app.post('/api/chat/send-template', sendLimiter, express.json(), async (req, res
           [Number(sessionId), notesJson]
         );
 
-        // Notificar frontends conectados vía SSE
-        inboxPush({
-          type: 'conversation_categorized',
-          sessionId: Number(sessionId),
-          category: 'entrega',
-          timestamp: Date.now()
-        });
-
         log.info({ sessionId, category: 'entrega', deliveryMeta }, '🏷️ Auto-categorizado como entrega');
       } catch (catError) {
         // No-fatal: el template ya se envió exitosamente
@@ -5735,27 +5688,6 @@ app.get('/api/chat/conversations', async (req, res) => {
   }
 });
 
-// SSE de Inbox (panelAuth)
-app.get('/api/chat/inbox-stream', (req, res) => {
-  try {
-    // CORS opcional
-    const origin = req.headers.origin;
-    if (origin && allowedOrigins.has(origin)) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Vary', 'Origin');
-    }
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive'
-    });
-    res.write('\n');
-    inboxSubscribers.add(res);
-    res.write(`data: ${JSON.stringify({ type: 'status', ok: true })}\n\n`);
-    const iv = setInterval(() => res.write('event: ping\ndata: {}\n\n'), 25000);
-    req.on('close', () => { clearInterval(iv); inboxSubscribers.delete(res); });
-  } catch { res.status(500).end(); }
-});
 
 // Marcar vistos en panel (no cambia read_at/status, solo panel_seen_at)
 app.post('/api/chat/panel-seen', async (req, res) => {
@@ -6805,14 +6737,6 @@ app.post('/api/chat/categorize', async (req, res) => {
        VALUES (?, ?, ?, ?)`,
       [Number(sessionId), category, req.user || 'system', notes || null]
     );
-    
-    // Emitir evento al stream global
-    inboxPush({
-      type: 'conversation_categorized',
-      sessionId: Number(sessionId),
-      category: category,
-      timestamp: Date.now()
-    });
     
     res.json({ 
       ok: true, 
